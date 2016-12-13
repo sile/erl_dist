@@ -1,0 +1,13 @@
+[package]
+name = "erl_dist"
+version = "0.1.0"
+authors = ["Takeru Ohta <phjgt308@gmail.com>"]
+
+[dependencies]
+eetf = "0.3"
+futures = "0.1"
+fibers = "0.1"
+handy_async = "0.2"
+
+[dev-dependencies]
+clap = "2.19"
