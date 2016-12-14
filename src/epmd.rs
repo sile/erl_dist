@@ -11,7 +11,16 @@ use handy_async::io::{ReadFrom, WriteInto, PatternReader};
 pub const TAG_NAMES_REQ: u8 = 110;
 pub const TAG_PORT_PLEASE2_REQ: u8 = 122;
 pub const TAG_PORT2_RESP: u8 = 119;
+pub const TAG_ALIVE2_REQ: u8 = 120;
+pub const TAG_ALIVE2_RESP: u8 = 121;
 
+#[derive(Debug)]
+pub struct Alive {
+    pub socket: fibers::net::TcpStream,
+    pub creation: u16,
+}
+
+#[derive(Clone)]
 pub struct Client {
     server_addr: SocketAddr,
 }
@@ -19,6 +28,40 @@ impl Client {
     pub fn new(server_addr: &SocketAddr) -> Self {
         Client { server_addr: server_addr.clone() }
     }
+    pub fn alive(&self, local_node_name: String, local_port: u16) -> BoxFuture<Alive, Error> {
+        self.connect()
+            .and_then(move |socket| {
+                let req = (TAG_ALIVE2_REQ,
+                           local_port.be(),
+                           77u8,
+                           0u8,
+                           5u16.be(),
+                           5u16.be(),
+                           (local_node_name.len() as u16).be(),
+                           local_node_name,
+                           0u16);
+                request(req).write_into(socket).map_err(|e| e.into_error())
+            })
+            .and_then(|(socket, _)| {
+                let resp = (U8, U8, U16.be()).and_then(|(tag, result, creation)| {
+                    assert_eq!(tag, TAG_ALIVE2_RESP); // TODO
+                    if result != 0 {
+                        Err(Error::new(ErrorKind::Other, "ALIVE2 failed"))
+                    } else {
+                        Ok(creation)
+                    }
+                });
+                resp.read_from(socket).map_err(|e| e.into_error())
+            })
+            .and_then(|(socket, creation)| {
+                Ok(Alive {
+                    socket: socket,
+                    creation: creation,
+                })
+            })
+            .boxed()
+    }
+
     pub fn names(&self) -> BoxFuture<String, Error> {
         self.connect()
             .and_then(|socket| {
@@ -112,18 +155,3 @@ fn request<P: WriteInto<Counter<Sink>> + Clone>(req: P) -> (BE<u16>, P) {
 fn strbuf(len: usize) -> String {
     String::from_utf8(vec![0; len]).unwrap()
 }
-
-// fn alive2_req<W: Write + Send + 'static>(port: u16) -> BoxPattern<PatternWriter<W>, ()> {
-//     reqfmt((120u8, port.be(), 77u8, 0, 5, 5, ("bar".len() as u16).be(), "bar".to_string(), 0))
-//         .map(|_| ())
-//         .boxed()
-// }
-
-// fn alive2_resp<R: Read + Send + 'static>() -> BoxPattern<PatternReader<R>, (u8, u16)> {
-//     (U8, U8, U16.be())
-//         .map(|(tag, result, creation)| {
-//             assert_eq!(tag, 121);
-//             (result, creation)
-//         })
-//         .boxed()
-// }
