@@ -13,6 +13,8 @@ fn main() {
         .arg(Arg::with_name("EPMD_HOST").short("h").takes_value(true).default_value("127.0.0.1"))
         .arg(Arg::with_name("EPMD_PORT").short("p").takes_value(true).default_value("4369"))
         .subcommand(SubCommand::with_name("names"))
+        .subcommand(SubCommand::with_name("port_please")
+            .arg(Arg::with_name("NODE").index(1).required(true)))
         .get_matches();
     let epmd_host = matches.value_of("EPMD_HOST").unwrap();
     let epmd_port = matches.value_of("EPMD_PORT").unwrap();
@@ -27,6 +29,14 @@ fn main() {
         println!("Registered Names");
         println!("================\n");
         println!("{}", names);
+    }
+    if let Some(matches) = matches.subcommand_matches("port_please") {
+        let node = matches.value_of("NODE").unwrap();
+        let monitor = executor.spawn_monitor(client.port_please(&node));
+        let info = executor.run_fiber(monitor).unwrap().expect("'port_please' request failed");
+        println!("Node Info");
+        println!("=========\n");
+        println!("{:?}", info);
     } else {
         println!("{}", matches.usage());
     }
