@@ -1,5 +1,5 @@
 use std::net::{IpAddr, SocketAddr};
-use std::io::{Sink, Error, ErrorKind, Write};
+use std::io::{Sink, Error, ErrorKind, Read, Write};
 use md5;
 use rand;
 use futures::{self, Future, BoxFuture};
@@ -10,7 +10,7 @@ use handy_async::pattern::read::{U8, U16, U32};
 use handy_async::io::misc::Counter;
 use handy_async::io::{ReadFrom, WriteInto, PatternWriter};
 
-use super::epmd::NodeInfo;
+use epmd::NodeInfo;
 
 pub const TAG_SEND_NAME: u8 = 110;
 pub const TAG_RECV_STATUS: u8 = 115;
@@ -32,6 +32,43 @@ pub const DFLAG_DIST_HDR_ATOM_CACHE: u32 = 0x2000;
 pub const DFLAG_SMALL_ATOM_TAGS: u32 = 0x4000;
 pub const DFLAG_UTF8_ATOMS: u32 = 0x10000;
 pub const DFLAG_MAP_TAG: u32 = 0x20000;
+
+pub type Connect<S> = BoxFuture<S, Error>;
+
+#[derive(Debug, Clone)]
+pub struct Handshake2 {
+    local_node: NodeInfo,
+    local_host: String,
+    in_cookie: String,
+    out_cookie: String,
+}
+impl Handshake2 {
+    pub fn new(local_node: NodeInfo, cookie: &str) -> Self {
+        Handshake2 {
+            local_node: local_node,
+            local_host: "127.0.0.1".to_string(),
+            in_cookie: cookie.to_string(),
+            out_cookie: cookie.to_string(),
+        }
+    }
+    pub fn in_cookie(&mut self, cookie: &str) -> &mut Self {
+        self.in_cookie = cookie.to_string();
+        self
+    }
+    pub fn out_cookie(&mut self, cookie: &str) -> &mut Self {
+        self.out_cookie = cookie.to_string();
+        self
+    }
+    pub fn hostname(&mut self, hostname: &str) -> &mut Self {
+        self.local_host = hostname.to_string();
+        self
+    }
+    pub fn connect<S>(&self, peer: S) -> Connect<S>
+        where S: Read + Write + Send + 'static
+    {
+        panic!()
+    }
+}
 
 pub struct Handshake;
 impl Handshake {

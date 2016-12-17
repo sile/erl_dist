@@ -1,157 +1,255 @@
-use std::io::{Sink, Error, ErrorKind, Read};
+use std::io::Error;
 use std::net::SocketAddr;
-use futures::{Future, BoxFuture};
-use fibers;
-use handy_async::pattern::{Pattern, BoxPattern, Endian, Branch};
+use futures::{self, Future, BoxFuture};
+use regex::Regex;
+use fibers::net::TcpStream;
+use handy_async::pattern::{Pattern, Endian, Branch};
 use handy_async::pattern::combinators::BE;
-use handy_async::pattern::read::{until, U8, U16, U32};
-use handy_async::io::misc::Counter;
-use handy_async::io::{ReadFrom, WriteInto, PatternReader};
+use handy_async::pattern::read::{U8, U16, U32, All, Utf8, LengthPrefixedBytes};
+use handy_async::io::{ReadFrom, WriteInto, ExternalSize, AsyncIoError};
 
-pub const TAG_NAMES_REQ: u8 = 110;
-pub const TAG_PORT_PLEASE2_REQ: u8 = 122;
-pub const TAG_PORT2_RESP: u8 = 119;
-pub const TAG_ALIVE2_REQ: u8 = 120;
-pub const TAG_ALIVE2_RESP: u8 = 121;
+pub const DEFAULT_EPMD_PORT: u16 = 4369;
+
+const TAG_KILL_REQ: u8 = 107;
+const TAG_PORT_PLEASE2_REQ: u8 = 122;
+const TAG_PORT2_RESP: u8 = 119;
+const TAG_NAMES_REQ: u8 = 110;
+const TAG_DUMP_REQ: u8 = 100;
+const TAG_ALIVE2_REQ: u8 = 120;
+const TAG_ALIVE2_RESP: u8 = 121;
+
+pub type Kill = BoxFuture<String, Error>;
+pub type GetNodeInfo = BoxFuture<Option<NodeInfo>, Error>;
+pub type Names = BoxFuture<Vec<Registered>, Error>;
+pub type Dump = BoxFuture<String, Error>;
+pub type Register = BoxFuture<Connection, Error>;
 
 #[derive(Debug)]
-pub struct Alive {
-    pub socket: fibers::net::TcpStream,
-    pub creation: u16,
+pub struct Connection {
+    socket: TcpStream,
+    creation: u16,
+}
+impl Connection {
+    pub fn creation(&self) -> u16 {
+        self.creation
+    }
 }
 
-#[derive(Clone)]
-pub struct Client {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Registered {
+    pub name: String,
+    pub port: u16,
+}
+
+#[derive(Debug)]
+pub struct EpmdClient {
     server_addr: SocketAddr,
 }
-impl Client {
-    pub fn new(server_addr: &SocketAddr) -> Self {
-        Client { server_addr: server_addr.clone() }
-    }
-    pub fn alive(&self, local_node_name: String, local_port: u16) -> BoxFuture<Alive, Error> {
-        self.connect()
-            .and_then(move |socket| {
-                let req = (TAG_ALIVE2_REQ,
-                           local_port.be(),
-                           77u8,
-                           0u8,
-                           5u16.be(),
-                           5u16.be(),
-                           (local_node_name.len() as u16).be(),
-                           local_node_name,
-                           0u16);
-                request(req).write_into(socket).map_err(|e| e.into_error())
-            })
-            .and_then(|(socket, _)| {
-                let resp = (U8, U8, U16.be()).and_then(|(tag, result, creation)| {
-                    assert_eq!(tag, TAG_ALIVE2_RESP); // TODO
-                    if result != 0 {
-                        Err(Error::new(ErrorKind::Other, "ALIVE2 failed"))
-                    } else {
-                        Ok(creation)
-                    }
-                });
-                resp.read_from(socket).map_err(|e| e.into_error())
-            })
-            .and_then(|(socket, creation)| {
-                Ok(Alive {
-                    socket: socket,
-                    creation: creation,
-                })
-            })
-            .boxed()
+impl EpmdClient {
+    pub fn new(server_addr: SocketAddr) -> Self {
+        EpmdClient { server_addr: server_addr }
     }
 
-    pub fn names(&self) -> BoxFuture<String, Error> {
-        self.connect()
-            .and_then(|socket| {
-                let req = request(TAG_NAMES_REQ);
-                req.write_into(socket).map_err(|e| e.into_error())
-            })
-            .and_then(|(socket, _)| {
-                // TODO:
-                let resp = (U32.be(), until(|_, eos| if eos { Ok(Some(())) } else { Ok(None) }))
-                    .map(|(_, (s, _))| String::from_utf8(s).unwrap());
-                resp.read_from(socket).map(|(_, s)| s).map_err(|e| e.into_error())
-            })
-            .boxed()
+    pub fn register(&self, node: NodeInfo) -> Register {
+        self.with_connect(|socket| {
+            futures::finished((socket, ()))
+                .and_then(move |(socket, _)| {
+                    let pattern = (TAG_ALIVE2_REQ,
+                                   node.port.be(),
+                                   node.node_type.as_u8(),
+                                   node.protocol.as_u8(),
+                                   node.highest_version.be(),
+                                   node.lowest_version.be(),
+                                   (node.name.len() as u16).be(),
+                                   node.name,
+                                   (node.extra.len() as u16).be(),
+                                   node.extra);
+                    request(pattern).write_into(socket)
+                })
+                .and_then(|(socket, _)| (U8, U8, U16.be()).read_from(socket))
+                .and_then(|(socket, (tag, result, creation))| {
+                    if tag != TAG_ALIVE2_RESP {
+                        let e = invalid_data!("Unexpected response tag {} \
+                                                              (expected={})",
+                                              tag,
+                                              TAG_ALIVE2_RESP);
+                        Err(AsyncIoError::new(socket, e))
+                    } else if result != 0 {
+                        let e = invalid_data!("ALVIE2 request failed: result={}", result);
+                        Err(AsyncIoError::new(socket, e))
+                    } else {
+                        Ok((socket.clone(),
+                            Connection {
+                            socket: socket,
+                            creation: creation,
+                        }))
+                    }
+                })
+        })
     }
-    pub fn port_please(&self, node: &str) -> BoxFuture<Option<NodeInfo>, Error> {
-        let node = node.to_string();
-        self.connect()
-            .and_then(move |socket| {
-                let req = request((TAG_PORT_PLEASE2_REQ, node));
-                req.write_into(socket).map_err(|e| e.into_error())
-            })
-            .and_then(|(socket, _)| {
-                let resp = U8.and_then(|tag| {
+
+    pub fn kill(&self) -> Kill {
+        self.with_connect(|socket| {
+            futures::finished((socket, ()))
+                .and_then(|(socket, _)| request(TAG_KILL_REQ).write_into(socket))
+                .and_then(|(socket, _)| Utf8(All).read_from(socket))
+        })
+    }
+    pub fn get_node_info(&self, node_name: &str) -> GetNodeInfo {
+        let name = node_name.to_string();
+        self.with_connect(|socket| {
+            futures::finished((socket, ()))
+                .and_then(|(socket, _)| request((TAG_PORT_PLEASE2_REQ, name)).write_into(socket))
+                .and_then(|(socket, _)| {
+                    let info = (U16.be(),
+                                U8,
+                                U8,
+                                U16.be(),
+                                U16.be(),
+                                Utf8(LengthPrefixedBytes(U16.be())),
+                                LengthPrefixedBytes(U16.be()))
+                        .map(|t| {
+                            NodeInfo {
+                                port: t.0,
+                                node_type: From::from(t.1),
+                                protocol: From::from(t.2),
+                                highest_version: t.3,
+                                lowest_version: t.4,
+                                name: t.5,
+                                extra: t.6,
+                            }
+                        });
+                    let resp = (U8, U8).and_then(|(tag, result)| {
                         if tag == TAG_PORT2_RESP {
-                            Branch::A(U8)
+                            Branch::A(if result == 0 { Some(info) } else { None }) as Branch<_, _>
                         } else {
-                            let e = invalid_data(&format!("Unexpected response tag: {}", tag));
-                            Branch::B(Err(e)) as Branch<_, _>
-                        }
-                    })
-                    .and_then(|result| {
-                        if result == 0 {
-                            Some(read_node_info())
-                        } else {
-                            None
+                            Branch::B(Err(invalid_data!("Unexpected response tag: {}", tag)))
                         }
                     });
-                resp.read_from(socket).map(|(_, r)| r).map_err(|e| e.into_error())
-            })
+                    resp.read_from(socket)
+                })
+        })
+    }
+    pub fn get_names(&self) -> Names {
+        self.with_connect(|socket| {
+            futures::finished((socket, ()))
+                .and_then(|(socket, _)| request(TAG_NAMES_REQ).write_into(socket))
+                .and_then(|(socket, _)| (U32.be(), Utf8(All)).read_from(socket))
+                .and_then(|(socket, (_epmd_port, info))| {
+                    let re = Regex::new("name (.+) at port ([0-9]+)").unwrap();
+                    let names = re.captures_iter(&info)
+                        .map(|cap| {
+                            Ok(Registered {
+                                name: cap.at(1).unwrap().to_string(),
+                                port: cap.at(2)
+                                    .unwrap()
+                                    .parse()
+                                    .map_err(|e| invalid_data!("Invalid port number: {}", e))?,
+                            })
+                        })
+                        .collect::<Result<_, _>>();
+                    match names {
+                        Ok(names) => Ok((socket, names)),
+                        Err(e) => Err(AsyncIoError::new(socket, e)),
+                    }
+                })
+        })
+    }
+    pub fn dump(&self) -> Dump {
+        self.with_connect(|socket| {
+            futures::finished((socket, ()))
+                .and_then(|(socket, _)| request(TAG_DUMP_REQ).write_into(socket))
+                .and_then(|(socket, _)| {
+                    (U32.be(), Utf8(All)).map(|(_, dump)| dump).read_from(socket)
+                })
+        })
+    }
+
+    fn with_connect<F, T, R>(&self, f: F) -> BoxFuture<T, Error>
+        where F: FnOnce(TcpStream) -> R + Send + 'static,
+              R: Future<Item = (TcpStream, T), Error = AsyncIoError<TcpStream>> + Send + 'static
+    {
+        TcpStream::connect(self.server_addr.clone())
+            .and_then(|socket| f(socket).map(|(_, v)| v).map_err(|e| e.into_error()))
             .boxed()
     }
-
-    fn connect(&self) -> fibers::net::futures::Connect {
-        fibers::net::TcpStream::connect(self.server_addr.clone())
-    }
-}
-
-fn read_node_info<R: Read + Send + 'static>() -> BoxPattern<PatternReader<R>, NodeInfo> {
-    (U16.be(),
-     U8,
-     U8,
-     U16.be(),
-     U16.be(),
-     U16.be().and_then(|len| strbuf(len as usize)),
-     U16.be().and_then(|len| vec![0; len as usize]))
-        .map(|t| {
-            NodeInfo {
-                port: t.0,
-                node_type: t.1,
-                protocol: t.2,
-                highest_version: t.3,
-                lowest_version: t.4,
-                node_name: t.5,
-                extra: t.6,
-            }
-        })
-        .boxed()
 }
 
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
+    pub name: String,
     pub port: u16,
-    pub node_type: u8,
-    pub protocol: u8,
+    pub node_type: NodeType,
+    pub protocol: Protocol,
     pub highest_version: u16,
     pub lowest_version: u16,
-    pub node_name: String,
     pub extra: Vec<u8>,
 }
-
-fn invalid_data(description: &str) -> Error {
-    Error::new(ErrorKind::InvalidData, description.to_string())
+impl NodeInfo {
+    pub fn new(name: &str, port: u16) -> Self {
+        NodeInfo {
+            name: name.to_string(),
+            port: port,
+            node_type: NodeType::Normal,
+            protocol: Protocol::TcpIpV4,
+            highest_version: 5,
+            lowest_version: 5,
+            extra: Vec::new(),
+        }
+    }
+    pub fn set_hidden(&mut self) -> &mut Self {
+        self.node_type = NodeType::Hidden;
+        self
+    }
 }
 
-fn request<P: WriteInto<Counter<Sink>> + Clone>(req: P) -> (BE<u16>, P) {
-    let counter = Counter::with_sink();
-    let (counter, _) = req.clone().write_into(counter).wait().unwrap();
-    ((counter.written_size() as u16).be(), req)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Protocol {
+    TcpIpV4,
+    Unknown(u8),
+}
+impl Protocol {
+    fn as_u8(&self) -> u8 {
+        match *self {
+            Protocol::TcpIpV4 => 0,
+            Protocol::Unknown(b) => b,
+        }
+    }
+}
+impl From<u8> for Protocol {
+    fn from(f: u8) -> Self {
+        match f {
+            0 => Protocol::TcpIpV4,
+            _ => Protocol::Unknown(f),
+        }
+    }
 }
 
-fn strbuf(len: usize) -> String {
-    String::from_utf8(vec![0; len]).unwrap()
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeType {
+    Hidden,
+    Normal,
+    Unknown(u8),
+}
+impl NodeType {
+    fn as_u8(&self) -> u8 {
+        match *self {
+            NodeType::Hidden => 72,
+            NodeType::Normal => 77,
+            NodeType::Unknown(b) => b,
+        }
+    }
+}
+impl From<u8> for NodeType {
+    fn from(f: u8) -> Self {
+        match f {
+            72 => NodeType::Hidden,
+            77 => NodeType::Normal,
+            _ => NodeType::Unknown(f),
+        }
+    }
+}
+
+fn request<P: ExternalSize>(pattern: P) -> (BE<u16>, P) {
+    ((pattern.external_size() as u16).be(), pattern)
 }
