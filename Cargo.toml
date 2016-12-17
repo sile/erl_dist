@@ -12,6 +12,7 @@ handy_async = {path = "../handy_async/"}
 md5 = "0.3"
 rand = "0.3"
 regex = "0.1"
+bitflags = "0.7"
 
 [dev-dependencies]
 clap = "2.19"

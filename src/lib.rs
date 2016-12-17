@@ -5,6 +5,8 @@ extern crate handy_async;
 extern crate md5;
 extern crate rand;
 extern crate regex;
+#[macro_use]
+extern crate bitflags;
 
 macro_rules! invalid_data {
     ($fmt:expr) => { invalid_data!($fmt,); };

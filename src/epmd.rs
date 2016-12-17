@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use futures::{self, Future, BoxFuture};
 use regex::Regex;
 use fibers::net::TcpStream;
-use handy_async::pattern::{Pattern, Endian, Branch};
+use handy_async::pattern::{Pattern, Endian};
 use handy_async::pattern::combinators::BE;
 use handy_async::pattern::read::{U8, U16, U32, All, Utf8, LengthPrefixedBytes};
 use handy_async::io::{ReadFrom, WriteInto, ExternalSize, AsyncIoError};
@@ -66,15 +66,11 @@ impl EpmdClient {
                                    node.extra);
                     request(pattern).write_into(socket)
                 })
-                .and_then(|(socket, _)| (U8, U8, U16.be()).read_from(socket))
-                .and_then(|(socket, (tag, result, creation))| {
-                    if tag != TAG_ALIVE2_RESP {
-                        let e = invalid_data!("Unexpected response tag {} \
-                                                              (expected={})",
-                                              tag,
-                                              TAG_ALIVE2_RESP);
-                        Err(AsyncIoError::new(socket, e))
-                    } else if result != 0 {
+                .and_then(|(socket, _)| {
+                    (U8.expect_eq(TAG_ALIVE2_RESP), U8, U16.be()).read_from(socket)
+                })
+                .and_then(|(socket, (_, result, creation))| {
+                    if result != 0 {
                         let e = invalid_data!("ALVIE2 request failed: result={}", result);
                         Err(AsyncIoError::new(socket, e))
                     } else {
@@ -94,6 +90,12 @@ impl EpmdClient {
                 .and_then(|(socket, _)| request(TAG_KILL_REQ).write_into(socket))
                 .and_then(|(socket, _)| Utf8(All).read_from(socket))
         })
+    }
+    pub fn get_node_addr(&self, node_name: &str) -> BoxFuture<Option<SocketAddr>, Error> {
+        let ip = self.server_addr.ip();
+        self.get_node_info(node_name)
+            .map(move |info| info.map(|info| SocketAddr::new(ip, info.port)))
+            .boxed()
     }
     pub fn get_node_info(&self, node_name: &str) -> GetNodeInfo {
         let name = node_name.to_string();
@@ -119,13 +121,8 @@ impl EpmdClient {
                                 extra: t.6,
                             }
                         });
-                    let resp = (U8, U8).and_then(|(tag, result)| {
-                        if tag == TAG_PORT2_RESP {
-                            Branch::A(if result == 0 { Some(info) } else { None }) as Branch<_, _>
-                        } else {
-                            Branch::B(Err(invalid_data!("Unexpected response tag: {}", tag)))
-                        }
-                    });
+                    let resp = (U8.expect_eq(TAG_PORT2_RESP), U8)
+                        .and_then(|(_, result)| { if result == 0 { Some(info) } else { None } });
                     resp.read_from(socket)
                 })
         })
