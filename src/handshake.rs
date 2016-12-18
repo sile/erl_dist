@@ -5,7 +5,7 @@ use futures::{self, Future, BoxFuture};
 use handy_async::pattern::{Pattern, Endian, Buf};
 use handy_async::pattern::combinators::BE;
 use handy_async::pattern::read::{U8, U16, U32, Utf8};
-use handy_async::io::{ReadFrom, WriteInto, ExternalSize};
+use handy_async::io::{ReadFrom, WriteInto, ExternalSize, Stateful};
 
 use epmd::NodeInfo;
 
@@ -37,10 +37,7 @@ bitflags! {
     }
 }
 
-pub type Connect<S> = BoxFuture<S, Error>;
-
-// TODO: use handy_async::io::StatefulStream struct
-// pub type Connect<S> = BoxFuture<(S, DistributionFlags), Error>;
+pub type Connect<S> = BoxFuture<(S, DistributionFlags), Error>;
 
 #[derive(Debug, Clone)]
 pub struct Handshake {
@@ -82,6 +79,11 @@ impl Handshake {
     pub fn connect<S>(&self, peer: S) -> Connect<S>
         where S: Read + Write + Send + 'static
     {
+
+        let peer = Stateful {
+            stream: peer,
+            state: DistributionFlags::empty(),
+        };
         // 1) `peer` is a connected stream
         let Handshake { local_node, in_cookie, out_cookie, flags, .. } = self.clone();
         futures::finished(peer)
@@ -111,17 +113,16 @@ impl Handshake {
                 });
                 pattern.read_from(peer)
             })
-            .and_then(move |(peer, (_, _version, flags, in_challenge, _peer_name))| {
+            .and_then(move |(mut peer, (_, _version, flags, in_challenge, _peer_name))| {
                 // 5) send_challenge_reply
                 // TODO: check flags (split `Handshake.flag` field to `in_flags` and `out_flags`)
                 let flags = DistributionFlags::from_bits_truncate(flags);
                 println!("5) send_challenge_reply: {:?}", flags);
+                peer.state = flags;
+
                 let in_digest = calc_digest(&in_cookie, in_challenge);
                 let out_challenge = rand::random::<u32>();
                 let out_digest = calc_digest(&out_cookie, out_challenge);
-
-                // TODO: Fix handy_aysnc's ExternalSize implementation for Buf
-                let in_digest = Vec::from(&in_digest[..]);
 
                 let reply = request((TAG_REPLY, out_challenge.be(), Buf(in_digest)))
                     .map(move |_| out_digest);
@@ -134,7 +135,7 @@ impl Handshake {
                 let ack = (U16.be().expect_eq(17), U8.expect_eq(TAG_ACK), digest);
                 ack.read_from(peer)
             })
-            .and_then(|(peer, _)| Ok(peer))
+            .and_then(|(peer, _)| Ok((peer.stream, peer.state)))
             .map_err(|e| e.into_error())
             .boxed()
     }
