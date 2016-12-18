@@ -18,6 +18,8 @@ macro_rules! invalid_data {
 pub mod epmd;
 pub mod node;
 pub mod handshake;
+pub mod channel;
+pub mod message;
 
 #[cfg(test)]
 mod tests {
