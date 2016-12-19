@@ -1,10 +1,8 @@
 extern crate eetf;
 extern crate futures;
-extern crate fibers;
 extern crate handy_async;
 extern crate md5;
 extern crate rand;
-extern crate regex;
 #[macro_use]
 extern crate bitflags;
 
@@ -15,11 +13,20 @@ macro_rules! invalid_data {
     };
 }
 
+pub use epmd::EpmdClient;
+
 pub mod epmd;
-pub mod node;
 pub mod handshake;
 pub mod channel;
 pub mod message;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Creation(u8);
+impl Creation {
+    fn from_u16(c: u16) -> Option<Self> {
+        if c < 4 { Some(Creation(c as u8)) } else { None }
+    }
+}
 
 #[cfg(test)]
 mod tests {

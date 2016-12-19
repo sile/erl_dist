@@ -38,6 +38,7 @@ bitflags! {
 }
 
 pub type Connect<S> = BoxFuture<(S, DistributionFlags), Error>;
+pub type Accept<S> = BoxFuture<(S, String, DistributionFlags), Error>;
 
 #[derive(Debug, Clone)]
 pub struct Handshake {
@@ -76,10 +77,65 @@ impl Handshake {
         self.local_host = hostname.to_string();
         self
     }
+    pub fn accept<S>(&self, peer: S) -> Accept<S>
+        where S: Read + Write + Send + 'static
+    {
+        let peer = Stateful {
+            stream: peer,
+            state: (String::new(), DistributionFlags::empty()),
+        };
+        let Handshake { local_node, in_cookie, out_cookie, flags, .. } = self.clone();
+        futures::finished(peer)
+            .and_then(|peer| {
+                let recv_name = U16.be().and_then(|len| {
+                    let name = Utf8(vec![0; len as usize - 7]);
+                    (U8.expect_eq(TAG_NAME), U16.be(), U32.be(), name)
+                });
+                recv_name.read_from(peer)
+            })
+            .and_then(|(mut peer, (_, version, flags, name))| {
+                // TODO: validate version and flags
+                let flags = DistributionFlags::from_bits_truncate(flags);
+                println!("# recv_name: ({}, {:?}, {})", version, flags, name);
+                peer.state = (name, flags);
+
+                let status = (TAG_STATUS, "ok".to_string());
+                request(status).write_into(peer)
+            })
+            .and_then(move |(peer, _)| {
+                println!("# send_challenge");
+                // TODO: handle flags and others
+                let name = format!("{}@localhost", local_node.name);
+                let challenge = rand::random::<u32>();
+                let digest = calc_digest(&out_cookie, challenge);
+                let challenge = (TAG_CHALLENGE,
+                                 local_node.highest_version.be(),
+                                 flags.bits().be(),
+                                 challenge.be(),
+                                 name);
+                request(challenge).map(move |_| digest).write_into(peer)
+            })
+            .and_then(|(peer, out_digest)| {
+                println!("# recv_challenge_reply");
+                let reply = (U16.be().expect_eq(21),
+                             U8.expect_eq(TAG_REPLY),
+                             U32.be(),
+                             Buf([0; 16]).expect_eq(out_digest));
+                reply.read_from(peer)
+            })
+            .and_then(move |(peer, (_, _, in_challenge, _))| {
+                println!("# send_chanllenge_ack");
+                let in_digest = calc_digest(&in_cookie, in_challenge);
+                let ack = (TAG_ACK, Buf(in_digest));
+                request(ack).write_into(peer)
+            })
+            .map(|(peer, _)| (peer.stream, peer.state.0, peer.state.1))
+            .map_err(|e| e.into_error())
+            .boxed()
+    }
     pub fn connect<S>(&self, peer: S) -> Connect<S>
         where S: Read + Write + Send + 'static
     {
-
         let peer = Stateful {
             stream: peer,
             state: DistributionFlags::empty(),
@@ -115,7 +171,6 @@ impl Handshake {
             })
             .and_then(move |(mut peer, (_, _version, flags, in_challenge, _peer_name))| {
                 // 5) send_challenge_reply
-                // TODO: check flags (split `Handshake.flag` field to `in_flags` and `out_flags`)
                 let flags = DistributionFlags::from_bits_truncate(flags);
                 println!("5) send_challenge_reply: {:?}", flags);
                 peer.state = flags;
