@@ -1,12 +1,23 @@
-// http://erlang.org/doc/apps/erts/erl_dist_protocol.html
+//! EPMD client example.
+//!
+//! # Usage Examples
+//!
+//! ```bash
+//! $ cargo run --example epmd_cli -- --help
+//! $ cargo run --example epmd_cli names
+//! $ cargo run --example epmd_cli node_info foo
+//! ```
 extern crate erl_dist;
 extern crate fibers;
 extern crate futures;
-extern crate handy_async;
 extern crate clap;
 
 use clap::{App, Arg, SubCommand};
-use fibers::Executor;
+use fibers::{Executor, InPlaceExecutor};
+use fibers::net::TcpStream;
+use futures::Future;
+use erl_dist::EpmdClient;
+use erl_dist::epmd::NodeInfo;
 
 fn main() {
     let matches = App::new("epmd_cli")
@@ -14,7 +25,7 @@ fn main() {
         .arg(Arg::with_name("EPMD_PORT").short("p").takes_value(true).default_value("4369"))
         .subcommand(SubCommand::with_name("names"))
         .subcommand(SubCommand::with_name("dump"))
-        .subcommand(SubCommand::with_name("port_please")
+        .subcommand(SubCommand::with_name("node_info")
             .arg(Arg::with_name("NODE").index(1).required(true)))
         .subcommand(SubCommand::with_name("kill"))
         .subcommand(SubCommand::with_name("register")
@@ -26,43 +37,60 @@ fn main() {
     let epmd_port = matches.value_of("EPMD_PORT").unwrap();
     let epmd_addr = format!("{}:{}", epmd_host, epmd_port).parse().expect("Invalid epmd address");
 
-    let client = erl_dist::epmd::EpmdClient::new(epmd_addr);
-    let mut executor = fibers::InPlaceExecutor::new().unwrap();
+    let client = EpmdClient::new();
+    let mut executor = InPlaceExecutor::new().unwrap();
 
+    let connect = TcpStream::connect(epmd_addr);
     if let Some(_matches) = matches.subcommand_matches("names") {
-        let monitor = executor.spawn_monitor(client.get_names());
+        // 'NAMES_REQ'
+        //
+        let monitor =
+            executor.spawn_monitor(connect.and_then(move |socket| client.get_names(socket)));
         let names = executor.run_fiber(monitor).unwrap().expect("'names' request failed");
         println!("Registered Names");
         println!("================\n");
         println!("{:?}", names);
     } else if let Some(_matches) = matches.subcommand_matches("dump") {
-        let monitor = executor.spawn_monitor(client.dump());
+        // 'DUMP_REQ'
+        //
+        let monitor = executor.spawn_monitor(connect.and_then(move |socket| client.dump(socket)));
         let dump = executor.run_fiber(monitor).unwrap().expect("'dump' request failed");
         println!("Dump");
         println!("=====\n");
         println!("{:?}", dump);
-    } else if let Some(matches) = matches.subcommand_matches("port_please") {
-        let node = matches.value_of("NODE").unwrap();
-        let monitor = executor.spawn_monitor(client.get_node_info(node));
-        let info = executor.run_fiber(monitor).unwrap().expect("'port_please' request failed");
+    } else if let Some(matches) = matches.subcommand_matches("node_info") {
+        // 'PORT_PLEASE2_REQ'
+        //
+        let node = matches.value_of("NODE").unwrap().to_string();
+        let monitor =
+            executor.spawn_monitor(connect.and_then(move |socket| {
+                    client.get_node_info(socket, &node)
+                }));
+        let info = executor.run_fiber(monitor).unwrap().expect("'node_info' request failed");
         println!("Node Info");
         println!("=========\n");
         println!("{:?}", info);
     } else if let Some(_matches) = matches.subcommand_matches("kill") {
-        let monitor = executor.spawn_monitor(client.kill());
+        // 'KILL_REQ'
+        //
+        let monitor = executor.spawn_monitor(connect.and_then(move |socket| client.kill(socket)));
         let result = executor.run_fiber(monitor).unwrap().expect("'kill' request failed");
         println!("KILLED: {:?}", result);
     } else if let Some(matches) = matches.subcommand_matches("register") {
+        // 'ALIVE2_REQ'
+        //
         let name = matches.value_of("NAME").unwrap();
         let port = matches.value_of("PORT").unwrap().parse().expect("Invalid port number");
         let hidden = matches.is_present("HIDDEN");
-        let mut node = erl_dist::epmd::NodeInfo::new(name, port);
+        let mut node = NodeInfo::new(name, port);
         if hidden {
             node.set_hidden();
         }
-        let monitor = executor.spawn_monitor(client.register(node));
-        let connection = executor.run_fiber(monitor).unwrap().expect("'register' request failed");
-        println!("CREATION: {}", connection.creation());
+        let monitor =
+            executor.spawn_monitor(connect.and_then(move |socket| client.register(socket, node)));
+        let (_, creation) =
+            executor.run_fiber(monitor).unwrap().expect("'register' request failed");
+        println!("CREATION: {:?}", creation);
     } else {
         println!("{}", matches.usage());
     }
