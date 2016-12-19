@@ -6,12 +6,11 @@ authors = ["Takeru Ohta <phjgt308@gmail.com>"]
 [dependencies]
 eetf = "0.3"
 futures = "0.1"
-fibers = "0.1"
 handy_async = "0.2"
 md5 = "0.3"
 rand = "0.3"
-regex = "0.1"
 bitflags = "0.7"
 
 [dev-dependencies]
 clap = "2.19"
+fibers = "0.1"
