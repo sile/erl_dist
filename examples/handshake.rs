@@ -6,6 +6,7 @@ extern crate handy_async;
 extern crate clap;
 
 use std::io::{Error, ErrorKind};
+use std::net::SocketAddr;
 use clap::{App, Arg};
 use fibers::Executor;
 use fibers::net::TcpStream;
@@ -25,29 +26,33 @@ fn main() {
             .takes_value(true)
             .default_value("bar@127.0.0.1"))
         .get_matches();
-    let node_name = matches.value_of("NODE_NAME").unwrap();
+    let node_name = matches.value_of("NODE_NAME").unwrap().to_string();
     let local_node = matches.value_of("LOCAL_NODE").unwrap().to_string();
     let cookie = matches.value_of("COOKIE").unwrap().to_string();
     let epmd_host = matches.value_of("EPMD_HOST").unwrap();
     let epmd_port = matches.value_of("EPMD_PORT").unwrap();
-    let epmd_addr = format!("{}:{}", epmd_host, epmd_port).parse().expect("Invalid epmd address");
+    let epmd_addr: SocketAddr =
+        format!("{}:{}", epmd_host, epmd_port).parse().expect("Invalid epmd address");
 
-    let client = erl_dist::epmd::EpmdClient::new(epmd_addr);
+    let client = erl_dist::epmd::EpmdClient::new();
     let mut executor = fibers::InPlaceExecutor::new().unwrap();
 
-    let monitor = executor.spawn_monitor(client.get_node_addr(node_name).and_then(|addr| {
-        if let Some(addr) = addr {
-            TcpStream::connect(addr)
-                .and_then(move |socket| {
-                    let local_node = erl_dist::epmd::NodeInfo::new(&local_node, 3333);
-                    let handshake = erl_dist::handshake::Handshake::new(local_node, &cookie);
-                    handshake.connect(socket)
-                })
-                .boxed()
-        } else {
-            futures::failed(Error::new(ErrorKind::NotFound, "target node is not found")).boxed()
-        }
-    }));
+    let epmd_ip = epmd_addr.ip();
+    let monitor = executor.spawn_monitor(TcpStream::connect(epmd_addr)
+        .and_then(move |socket| client.get_node_info(socket, &node_name))
+        .and_then(move |info| {
+            if let Some(addr) = info.map(|i| SocketAddr::new(epmd_ip, i.port)) {
+                TcpStream::connect(addr)
+                    .and_then(move |socket| {
+                        let local_node = erl_dist::epmd::NodeInfo::new(&local_node, 3333);
+                        let handshake = erl_dist::handshake::Handshake::new(local_node, &cookie);
+                        handshake.connect(socket)
+                    })
+                    .boxed()
+            } else {
+                futures::failed(Error::new(ErrorKind::NotFound, "target node is not found")).boxed()
+            }
+        }));
     let r = executor.run_fiber(monitor).unwrap().expect("Handshake failed");
     println!("R: {:?}", r);
 }
