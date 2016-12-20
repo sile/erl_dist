@@ -1,72 +1,290 @@
+//! Messages passed between distributed nodes.
+//!
+//! Reference: [12.3 Protocol between Connected Nodes]
+//! (http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id105440).
+//!
+//! Note that distribution headers are not supported in the current version.
 use std::io::{self, Read, Write, Error, ErrorKind};
 use eetf::{Pid, Term, Reference, Atom, FixInteger, Tuple};
 use eetf::convert::{TryAsRef, TryInto};
 
-pub const CTRL_TYPE_LINK: u8 = 1;
-pub const CTRL_TYPE_SEND: u8 = 2;
-pub const CTRL_TYPE_EXIT: u8 = 3;
-pub const CTRL_TYPE_UNLINK: u8 = 4;
-pub const CTRL_TYPE_NODE_LINK: u8 = 5;
-pub const CTRL_TYPE_REG_SEND: u8 = 6;
-pub const CTRL_TYPE_GROUP_LEADER: u8 = 7;
-pub const CTRL_TYPE_EXIT2: u8 = 8;
-pub const CTRL_TYPE_SEND_TT: u8 = 12;
-pub const CTRL_TYPE_EXIT_TT: u8 = 13;
-pub const CTRL_TYPE_REG_SEND_TT: u8 = 16;
-pub const CTRL_TYPE_EXIT2_TT: u8 = 18;
-pub const CTRL_TYPE_MONITOR_P: u8 = 19;
-pub const CTRL_TYPE_DEMONITOR_P: u8 = 20;
-pub const CTRL_TYPE_MONITOR_P_EXIT: u8 = 21;
+const CTRL_TYPE_LINK: u8 = 1;
+const CTRL_TYPE_SEND: u8 = 2;
+const CTRL_TYPE_EXIT: u8 = 3;
+const CTRL_TYPE_UNLINK: u8 = 4;
+const CTRL_TYPE_NODE_LINK: u8 = 5;
+const CTRL_TYPE_REG_SEND: u8 = 6;
+const CTRL_TYPE_GROUP_LEADER: u8 = 7;
+const CTRL_TYPE_EXIT2: u8 = 8;
+const CTRL_TYPE_SEND_TT: u8 = 12;
+const CTRL_TYPE_EXIT_TT: u8 = 13;
+const CTRL_TYPE_REG_SEND_TT: u8 = 16;
+const CTRL_TYPE_EXIT2_TT: u8 = 18;
+const CTRL_TYPE_MONITOR_P: u8 = 19;
+const CTRL_TYPE_DEMONITOR_P: u8 = 20;
+const CTRL_TYPE_MONITOR_P_EXIT: u8 = 21;
 
-pub const TAG_PASS_THROUGH: u8 = 112;
+const TAG_PASS_THROUGH: u8 = 112;
 
-#[derive(Debug, Clone)]
-pub struct DistributionHeader;
-
-#[derive(Debug, Clone)]
-pub struct Message {
-    distribution_header: Option<DistributionHeader>,
-    body: Body,
+/// Message.
+///
+/// This provides various message construction functions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Message {
+    Link(Link),
+    Send(Send),
+    Exit(Exit),
+    Unlink(Unlink),
+    NodeLink(NodeLink),
+    RegSend(RegSend),
+    GroupLeader(GroupLeader),
+    Exit2(Exit2),
+    SendTt(SendTt),
+    ExitTt(ExitTt),
+    RegSendTt(RegSendTt),
+    Exit2Tt(Exit2Tt),
+    MonitorP(MonitorP),
+    DemonitorP(DemonitorP),
+    MonitorPExit(MonitorPExit),
+    Heartbeat(Heartbeat),
 }
 impl Message {
-    fn new(body: Body) -> Self {
-        Message {
-            distribution_header: None,
-            body: body,
+    /// Reads a `Message` from `reader`.
+    pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut buf = [0];
+        if let Err(e) = reader.read_exact(&mut buf) {
+            if e.kind() == ErrorKind::UnexpectedEof {
+                Ok(Message::heartbeat())
+            } else {
+                Err(e)
+            }
+        } else if buf[0] != TAG_PASS_THROUGH {
+            Err(invalid_data!("Message tag {} is currently unsupported", buf[0]))
+        } else {
+            let ctrl: Tuple = read_term(reader)?;
+            let tag = {
+                let tag: &FixInteger = ctrl.elements[0].try_as_ref().unwrap();
+                tag.value as u8
+            };
+            Ok(match tag {
+                CTRL_TYPE_LINK => Message::from(Link::read_from(ctrl, reader)?),
+                CTRL_TYPE_SEND => Message::from(Send::read_from(ctrl, reader)?),
+                CTRL_TYPE_EXIT => Message::from(Exit::read_from(ctrl, reader)?),
+                CTRL_TYPE_UNLINK => Message::from(Unlink::read_from(ctrl, reader)?),
+                CTRL_TYPE_NODE_LINK => Message::from(NodeLink::read_from(ctrl, reader)?),
+                CTRL_TYPE_REG_SEND => Message::from(RegSend::read_from(ctrl, reader)?),
+                CTRL_TYPE_GROUP_LEADER => Message::from(GroupLeader::read_from(ctrl, reader)?),
+                CTRL_TYPE_EXIT2 => Message::from(Exit2::read_from(ctrl, reader)?),
+                CTRL_TYPE_SEND_TT => Message::from(SendTt::read_from(ctrl, reader)?),
+                CTRL_TYPE_EXIT_TT => Message::from(ExitTt::read_from(ctrl, reader)?),
+                CTRL_TYPE_REG_SEND_TT => Message::from(RegSendTt::read_from(ctrl, reader)?),
+                CTRL_TYPE_EXIT2_TT => Message::from(Exit2Tt::read_from(ctrl, reader)?),
+                CTRL_TYPE_MONITOR_P => Message::from(MonitorP::read_from(ctrl, reader)?),
+                CTRL_TYPE_DEMONITOR_P => Message::from(DemonitorP::read_from(ctrl, reader)?),
+                CTRL_TYPE_MONITOR_P_EXIT => Message::from(MonitorPExit::read_from(ctrl, reader)?),
+                _ => {
+                    return Err(invalid_data!("Unknown control message: type={}", tag));
+                }
+            })
         }
     }
-    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
-        // TODO
-        assert_eq!(bytes[0], TAG_PASS_THROUGH);
-        let body = Body::read_from(&mut &bytes[1..])?;
-        Ok(Message {
-            distribution_header: None,
-            body: body,
+
+    /// Writes this `Message` into `writer`.
+    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+        if let Message::Heartbeat(_) = self {
+            Ok(())
+        } else {
+            writer.write_all(&[TAG_PASS_THROUGH])?;
+            match self {
+                Message::Link(x) => x.write_into(writer),
+                Message::Send(x) => x.write_into(writer),
+                Message::Exit(x) => x.write_into(writer),
+                Message::Unlink(x) => x.write_into(writer),
+                Message::NodeLink(x) => x.write_into(writer),
+                Message::RegSend(x) => x.write_into(writer),
+                Message::GroupLeader(x) => x.write_into(writer),
+                Message::Exit2(x) => x.write_into(writer),
+                Message::SendTt(x) => x.write_into(writer),
+                Message::ExitTt(x) => x.write_into(writer),
+                Message::RegSendTt(x) => x.write_into(writer),
+                Message::Exit2Tt(x) => x.write_into(writer),
+                Message::MonitorP(x) => x.write_into(writer),
+                Message::DemonitorP(x) => x.write_into(writer),
+                Message::MonitorPExit(x) => x.write_into(writer),
+                Message::Heartbeat(_) => unreachable!(),
+            }
+        }
+    }
+
+    /// Makes a new `Heartbeat` message.
+    pub fn heartbeat() -> Self {
+        Message::from(Heartbeat)
+    }
+
+    /// Makes a new `Link` message.
+    pub fn link(from_pid: Pid, to_pid: Pid) -> Self {
+        Message::from(Link {
+            from_pid: from_pid,
+            to_pid: to_pid,
         })
     }
-    pub fn into_bytes(self) -> io::Result<Vec<u8>> {
-        assert!(self.distribution_header.is_none(), "Unimpelemented");
-        let mut buf = vec![0; 4];
-        buf.push(TAG_PASS_THROUGH);
-        self.body.write_into(&mut buf)?;
-        let message_len = buf.len() - 4;
-        buf[0] = (message_len >> 24) as u8;
-        buf[1] = (message_len >> 16) as u8;
-        buf[2] = (message_len >> 8) as u8;
-        buf[3] = message_len as u8;
-        Ok(buf)
+
+    /// Makes a new `Send` message.
+    pub fn send<T>(to_pid: Pid, message: T) -> Self
+        where Term: From<T>
+    {
+        Message::from(Send {
+            to_pid: to_pid,
+            message: Term::from(message),
+        })
     }
-}
-impl From<Body> for Message {
-    fn from(f: Body) -> Self {
-        Message::new(f)
+
+    /// Makes a new `Exit` message.
+    pub fn exit<T>(from_pid: Pid, to_pid: Pid, reason: T) -> Self
+        where Term: From<T>
+    {
+        Message::from(Exit {
+            from_pid: from_pid,
+            to_pid: to_pid,
+            reason: Term::from(reason),
+        })
+    }
+
+    /// Makes a new `Unlink` message.
+    pub fn unlink(from_pid: Pid, to_pid: Pid) -> Self {
+        Message::from(Unlink {
+            from_pid: from_pid,
+            to_pid: to_pid,
+        })
+    }
+
+    /// Makes a new `NodeLink` message.
+    pub fn node_link() -> Self {
+        Message::from(NodeLink)
+    }
+
+    /// Makes a new `RegSend` message.
+    pub fn reg_send<A, T>(from_pid: Pid, to_name: A, message: T) -> Self
+        where Atom: From<A>,
+              Term: From<T>
+    {
+        Message::from(RegSend {
+            from_pid: from_pid,
+            to_name: Atom::from(to_name),
+            message: Term::from(message),
+        })
+    }
+
+    /// Makes a new `GroupLeader` message.
+    pub fn group_leader(from_pid: Pid, to_pid: Pid) -> Self {
+        Message::from(GroupLeader {
+            from_pid: from_pid,
+            to_pid: to_pid,
+        })
+    }
+
+    /// Makes a new `Exit2` message.
+    pub fn exit2<T>(from_pid: Pid, to_pid: Pid, reason: T) -> Self
+        where Term: From<T>
+    {
+        Message::from(Exit2 {
+            from_pid: from_pid,
+            to_pid: to_pid,
+            reason: Term::from(reason),
+        })
+    }
+
+    /// Makes a new `SendTt` message.
+    pub fn send_tt<T, U>(to_pid: Pid, trace_token: T, message: U) -> Self
+        where Term: From<T>,
+              Term: From<U>
+    {
+        Message::from(SendTt {
+            to_pid: to_pid,
+            trace_token: Term::from(trace_token),
+            message: Term::from(message),
+        })
+    }
+
+    /// Makes a new `ExitTt` message.
+    pub fn exit_tt<T, U>(from_pid: Pid, to_pid: Pid, trace_token: T, reason: U) -> Self
+        where Term: From<T>,
+              Term: From<U>
+    {
+        Message::from(ExitTt {
+            from_pid: from_pid,
+            to_pid: to_pid,
+            trace_token: Term::from(trace_token),
+            reason: Term::from(reason),
+        })
+    }
+
+    /// Makes a new `RegSendTt` message.
+    pub fn reg_send_tt<A, T, U>(from_pid: Pid, to_name: A, trace_token: T, message: U) -> Self
+        where Atom: From<A>,
+              Term: From<T>,
+              Term: From<U>
+    {
+        Message::from(RegSendTt {
+            from_pid: from_pid,
+            to_name: Atom::from(to_name),
+            trace_token: Term::from(trace_token),
+            message: Term::from(message),
+        })
+    }
+
+    /// Makes a new `Exit2Tt` message.
+    pub fn exit2_tt<T, U>(from_pid: Pid, to_pid: Pid, trace_token: T, reason: U) -> Self
+        where Term: From<T>,
+              Term: From<U>
+    {
+        Message::from(Exit2Tt {
+            from_pid: from_pid,
+            to_pid: to_pid,
+            trace_token: Term::from(trace_token),
+            reason: Term::from(reason),
+        })
+    }
+
+    /// Makes a new `MonitorP` message.
+    pub fn monitor_p<T>(from_pid: Pid, to_proc: T, reference: Reference) -> Self
+        where ProcessRef: From<T>
+    {
+        Message::from(MonitorP {
+            from_pid: from_pid,
+            to_proc: From::from(to_proc),
+            reference: reference,
+        })
+    }
+
+    /// Makes a new `DemonitorP` message.
+    pub fn demonitor_p<T>(from_pid: Pid, to_proc: T, reference: Reference) -> Self
+        where ProcessRef: From<T>
+    {
+        Message::from(DemonitorP {
+            from_pid: from_pid,
+            to_proc: From::from(to_proc),
+            reference: reference,
+        })
+    }
+
+    /// Makes a new `MonitorPExit` message.
+    pub fn monitor_p_exit<T>(from_pid: Pid, to_pid: Pid, reference: Reference, reason: T) -> Self
+        where Term: From<T>
+    {
+        Message::from(MonitorPExit {
+            from_pid: from_pid,
+            to_pid: to_pid,
+            reference: reference,
+            reason: Term::from(reason),
+        })
     }
 }
 macro_rules! impl_from_for_message {
     ($t:ident) => {
         impl From<$t> for Message {
             fn from(f: $t) -> Self {
-                Message::new(Body::$t(f))
+                Message::$t(f)
             }
         }
     }
@@ -86,107 +304,15 @@ impl_from_for_message!(Exit2Tt);
 impl_from_for_message!(MonitorP);
 impl_from_for_message!(DemonitorP);
 impl_from_for_message!(MonitorPExit);
+impl_from_for_message!(Heartbeat);
 
-#[derive(Debug, Clone)]
-pub enum Body {
-    Link(Link),
-    Send(Send),
-    Exit(Exit),
-    Unlink(Unlink),
-    NodeLink(NodeLink),
-    RegSend(RegSend),
-    GroupLeader(GroupLeader),
-    Exit2(Exit2),
-    SendTt(SendTt),
-    ExitTt(ExitTt),
-    RegSendTt(RegSendTt),
-    Exit2Tt(Exit2Tt),
-    MonitorP(MonitorP),
-    DemonitorP(DemonitorP),
-    MonitorPExit(MonitorPExit),
-}
-impl Body {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
-        match self {
-            Body::Link(x) => x.write_into(writer),
-            Body::Send(x) => x.write_into(writer),
-            Body::Exit(x) => x.write_into(writer),
-            Body::Unlink(x) => x.write_into(writer),
-            Body::NodeLink(x) => x.write_into(writer),
-            Body::RegSend(x) => x.write_into(writer),
-            Body::GroupLeader(x) => x.write_into(writer),
-            Body::Exit2(x) => x.write_into(writer),
-            Body::SendTt(x) => x.write_into(writer),
-            Body::ExitTt(x) => x.write_into(writer),
-            Body::RegSendTt(x) => x.write_into(writer),
-            Body::Exit2Tt(x) => x.write_into(writer),
-            Body::MonitorP(x) => x.write_into(writer),
-            Body::DemonitorP(x) => x.write_into(writer),
-            Body::MonitorPExit(x) => x.write_into(writer),
-        }
-    }
-    fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
-        // TODO: error handlings
-        let ctrl: Tuple = read_term(reader)?;
-        let tag = {
-            let tag: &FixInteger = ctrl.elements[0].try_as_ref().unwrap();
-            tag.value as u8
-        };
-        Ok(match tag {
-            CTRL_TYPE_LINK => Body::from(Link::read_from(ctrl, reader)?),
-            CTRL_TYPE_SEND => Body::from(Send::read_from(ctrl, reader)?),
-            CTRL_TYPE_EXIT => Body::from(Exit::read_from(ctrl, reader)?),
-            CTRL_TYPE_UNLINK => Body::from(Unlink::read_from(ctrl, reader)?),
-            CTRL_TYPE_NODE_LINK => Body::from(NodeLink::read_from(ctrl, reader)?),
-            CTRL_TYPE_REG_SEND => Body::from(RegSend::read_from(ctrl, reader)?),
-            CTRL_TYPE_GROUP_LEADER => Body::from(GroupLeader::read_from(ctrl, reader)?),
-            CTRL_TYPE_EXIT2 => Body::from(Exit2::read_from(ctrl, reader)?),
-            CTRL_TYPE_SEND_TT => Body::from(SendTt::read_from(ctrl, reader)?),
-            CTRL_TYPE_EXIT_TT => Body::from(ExitTt::read_from(ctrl, reader)?),
-            CTRL_TYPE_REG_SEND_TT => Body::from(RegSendTt::read_from(ctrl, reader)?),
-            CTRL_TYPE_EXIT2_TT => Body::from(Exit2Tt::read_from(ctrl, reader)?),
-            CTRL_TYPE_MONITOR_P => Body::from(MonitorP::read_from(ctrl, reader)?),
-            CTRL_TYPE_DEMONITOR_P => Body::from(DemonitorP::read_from(ctrl, reader)?),
-            CTRL_TYPE_MONITOR_P_EXIT => Body::from(MonitorPExit::read_from(ctrl, reader)?),
-            _ => {
-                return Err(Error::new(ErrorKind::InvalidData,
-                                      format!("Unknown control message: type={}", tag)));
-            }
-        })
-    }
-}
-macro_rules! impl_from_for_body {
-    ($t:ident) => {
-        impl From<$t> for Body {
-            fn from(f: $t) -> Self {
-                Body::$t(f)
-            }
-        }
-    }
-}
-impl_from_for_body!(Link);
-impl_from_for_body!(Send);
-impl_from_for_body!(Exit);
-impl_from_for_body!(Unlink);
-impl_from_for_body!(NodeLink);
-impl_from_for_body!(RegSend);
-impl_from_for_body!(GroupLeader);
-impl_from_for_body!(Exit2);
-impl_from_for_body!(SendTt);
-impl_from_for_body!(ExitTt);
-impl_from_for_body!(RegSendTt);
-impl_from_for_body!(Exit2Tt);
-impl_from_for_body!(MonitorP);
-impl_from_for_body!(DemonitorP);
-impl_from_for_body!(MonitorPExit);
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Link {
     pub from_pid: Pid,
     pub to_pid: Pid,
 }
 impl Link {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple3(CTRL_TYPE_LINK, self.from_pid, self.to_pid);
         write_term(writer, ctrl)
     }
@@ -200,21 +326,13 @@ impl Link {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Send {
     pub to_pid: Pid,
     pub message: Term,
 }
 impl Send {
-    pub fn new<T>(to_pid: Pid, message: T) -> Self
-        where Term: From<T>
-    {
-        Send {
-            to_pid: to_pid,
-            message: Term::from(message),
-        }
-    }
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple3(CTRL_TYPE_SEND, Tuple::nil(), self.to_pid);
         write_term(writer, ctrl)?;
         write_term(writer, self.message)?;
@@ -230,14 +348,14 @@ impl Send {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Exit {
     pub from_pid: Pid,
     pub to_pid: Pid,
     pub reason: Term,
 }
 impl Exit {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple4(CTRL_TYPE_EXIT, self.from_pid, self.to_pid, self.reason);
         write_term(writer, ctrl)
     }
@@ -253,13 +371,13 @@ impl Exit {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Unlink {
     pub from_pid: Pid,
     pub to_pid: Pid,
 }
 impl Unlink {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple3(CTRL_TYPE_UNLINK, self.from_pid, self.to_pid);
         write_term(writer, ctrl)
     }
@@ -273,10 +391,10 @@ impl Unlink {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeLink;
 impl NodeLink {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple1(CTRL_TYPE_NODE_LINK);
         write_term(writer, ctrl)
     }
@@ -285,25 +403,14 @@ impl NodeLink {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RegSend {
     pub from_pid: Pid,
     pub to_name: Atom,
     pub message: Term,
 }
 impl RegSend {
-    pub fn new<F, T, M>(from_pid: F, to_name: T, message: M) -> Self
-        where Pid: From<F>,
-              Atom: From<T>,
-              Term: From<M>
-    {
-        RegSend {
-            from_pid: From::from(from_pid),
-            to_name: From::from(to_name),
-            message: From::from(message),
-        }
-    }
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple4(CTRL_TYPE_REG_SEND,
                                  self.from_pid,
                                  Tuple::nil(),
@@ -324,13 +431,13 @@ impl RegSend {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupLeader {
     pub from_pid: Pid,
     pub to_pid: Pid,
 }
 impl GroupLeader {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple3(CTRL_TYPE_GROUP_LEADER, self.from_pid, self.to_pid);
         write_term(writer, ctrl)
     }
@@ -344,14 +451,14 @@ impl GroupLeader {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Exit2 {
     pub from_pid: Pid,
     pub to_pid: Pid,
     pub reason: Term,
 }
 impl Exit2 {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple4(CTRL_TYPE_EXIT2, self.from_pid, self.to_pid, self.reason);
         write_term(writer, ctrl)
     }
@@ -367,14 +474,14 @@ impl Exit2 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SendTt {
     pub to_pid: Pid,
     pub trace_token: Term,
     pub message: Term,
 }
 impl SendTt {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple4(CTRL_TYPE_SEND_TT,
                                  Tuple::nil(),
                                  self.to_pid,
@@ -395,7 +502,7 @@ impl SendTt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExitTt {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -403,7 +510,7 @@ pub struct ExitTt {
     pub reason: Term,
 }
 impl ExitTt {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple5(CTRL_TYPE_EXIT_TT,
                                  self.from_pid,
                                  self.to_pid,
@@ -425,7 +532,7 @@ impl ExitTt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RegSendTt {
     pub from_pid: Pid,
     pub to_name: Atom,
@@ -433,7 +540,7 @@ pub struct RegSendTt {
     pub message: Term,
 }
 impl RegSendTt {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple5(CTRL_TYPE_REG_SEND_TT,
                                  self.from_pid,
                                  Tuple::nil(),
@@ -457,7 +564,7 @@ impl RegSendTt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Exit2Tt {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -465,7 +572,7 @@ pub struct Exit2Tt {
     pub reason: Term,
 }
 impl Exit2Tt {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple5(CTRL_TYPE_EXIT2_TT,
                                  self.from_pid,
                                  self.to_pid,
@@ -487,14 +594,14 @@ impl Exit2Tt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MonitorP {
     pub from_pid: Pid,
     pub to_proc: ProcessRef,
     pub reference: Reference,
 }
 impl MonitorP {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple4(CTRL_TYPE_MONITOR_P,
                                  self.from_pid,
                                  self.to_proc,
@@ -519,14 +626,14 @@ impl MonitorP {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DemonitorP {
     pub from_pid: Pid,
     pub to_proc: ProcessRef,
     pub reference: Reference,
 }
 impl DemonitorP {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple4(CTRL_TYPE_DEMONITOR_P,
                                  self.from_pid,
                                  self.to_proc,
@@ -551,7 +658,7 @@ impl DemonitorP {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MonitorPExit {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -559,7 +666,7 @@ pub struct MonitorPExit {
     pub reason: Term,
 }
 impl MonitorPExit {
-    pub fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
+    fn write_into<W: Write>(self, writer: &mut W) -> io::Result<()> {
         let ctrl = tagged_tuple5(CTRL_TYPE_DEMONITOR_P,
                                  self.from_pid,
                                  self.to_pid,
@@ -581,10 +688,24 @@ impl MonitorPExit {
     }
 }
 
-#[derive(Debug, Clone)]
+// TODO
+#[derive(Debug, Clone, PartialEq)]
+pub struct Heartbeat;
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ProcessRef {
     Pid(Pid),
     Name(Atom),
+}
+impl From<Pid> for ProcessRef {
+    fn from(f: Pid) -> Self {
+        ProcessRef::Pid(f)
+    }
+}
+impl From<Atom> for ProcessRef {
+    fn from(f: Atom) -> Self {
+        ProcessRef::Name(f)
+    }
 }
 impl From<ProcessRef> for Term {
     fn from(f: ProcessRef) -> Self {
@@ -621,10 +742,7 @@ fn read_term<R: Read, T>(reader: &mut R) -> io::Result<T>
                 Error::new(ErrorKind::InvalidData, Box::new(e))
             }
         })
-        .and_then(|term| {
-            term.try_into()
-                .map_err(|t| Error::new(ErrorKind::InvalidData, format!("Unexpected term: {}", t)))
-        })
+        .and_then(|term| term.try_into().map_err(|t| invalid_data!("Unexpected term: {}", t)))
 }
 
 fn tagged_tuple1(tag: u8) -> Tuple {
