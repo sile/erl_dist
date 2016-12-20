@@ -14,17 +14,31 @@ macro_rules! invalid_data {
 }
 
 pub use epmd::EpmdClient;
+pub use message::Message;
+pub use handshake::Handshake;
 
 pub mod epmd;
-pub mod handshake;
 pub mod channel;
 pub mod message;
+pub mod handshake;
 
+/// The generation number of a distributed node.
+///
+/// If a node restarts, the count will be incremented.
+///
+/// Note the counter will wrap around, if it exceeds four.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Creation(u8);
 impl Creation {
     fn from_u16(c: u16) -> Option<Self> {
         if c < 4 { Some(Creation(c as u8)) } else { None }
+    }
+
+    /// Returns the inner counter value of this `Creation`.
+    ///
+    /// The range of this value is limited to `0..4`.
+    pub fn as_u8(&self) -> u8 {
+        self.0
     }
 }
 
