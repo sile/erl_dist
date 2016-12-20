@@ -62,7 +62,7 @@ impl<W> Sink for Sender<W>
             SenderInner::Idle(writer) => {
                 let mut buf = vec![0; 4];
                 item.write_into(&mut buf)?;
-                let message_len = buf.len();
+                let message_len = buf.len() - 4;
                 buf[0] = (message_len >> 24) as u8;
                 buf[1] = (message_len >> 16) as u8;
                 buf[2] = (message_len >> 8) as u8;
