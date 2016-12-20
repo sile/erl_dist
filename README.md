@@ -5,7 +5,7 @@ erl_dist
 [![Build Status](https://travis-ci.org/sile/erl_dist.svg?branch=master)](https://travis-ci.org/sile/erl_dist)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Rust Implementation of [Erlang Distributed Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html).
+Rust Implementation of [Erlang Distribution Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html).
 
 The distribution protocol is used to communicate with distributed erlang nodes.
 
