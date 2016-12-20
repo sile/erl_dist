@@ -1,3 +1,17 @@
+//! Rust Implementation of Erlang Distribution Protocol.
+//!
+//! Distribution protocol is used to communicate with distributed erlang nodes.
+//!
+//! Reference: [12 Distribution Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html)
+//!
+//! # Examples
+//!
+//! - Client Node Example: [send_msg.rs]
+//!                        (https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
+//! - Server Node Example: [recv_msg.rs]
+//!                        (https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
+#![warn(missing_docs)]
+
 extern crate eetf;
 extern crate futures;
 extern crate handy_async;

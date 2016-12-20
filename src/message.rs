@@ -29,6 +29,7 @@ const TAG_PASS_THROUGH: u8 = 112;
 /// Message.
 ///
 /// This provides various message construction functions.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     Link(Link),
@@ -306,6 +307,7 @@ impl_from_for_message!(DemonitorP);
 impl_from_for_message!(MonitorPExit);
 impl_from_for_message!(Heartbeat);
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Link {
     pub from_pid: Pid,
@@ -326,6 +328,7 @@ impl Link {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Send {
     pub to_pid: Pid,
@@ -348,6 +351,7 @@ impl Send {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exit {
     pub from_pid: Pid,
@@ -371,6 +375,7 @@ impl Exit {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Unlink {
     pub from_pid: Pid,
@@ -391,6 +396,7 @@ impl Unlink {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeLink;
 impl NodeLink {
@@ -403,6 +409,7 @@ impl NodeLink {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegSend {
     pub from_pid: Pid,
@@ -431,6 +438,7 @@ impl RegSend {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupLeader {
     pub from_pid: Pid,
@@ -451,6 +459,7 @@ impl GroupLeader {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exit2 {
     pub from_pid: Pid,
@@ -474,6 +483,7 @@ impl Exit2 {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SendTt {
     pub to_pid: Pid,
@@ -502,6 +512,7 @@ impl SendTt {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExitTt {
     pub from_pid: Pid,
@@ -532,6 +543,7 @@ impl ExitTt {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegSendTt {
     pub from_pid: Pid,
@@ -564,6 +576,7 @@ impl RegSendTt {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exit2Tt {
     pub from_pid: Pid,
@@ -594,6 +607,7 @@ impl Exit2Tt {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorP {
     pub from_pid: Pid,
@@ -626,6 +640,7 @@ impl MonitorP {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct DemonitorP {
     pub from_pid: Pid,
@@ -658,6 +673,7 @@ impl DemonitorP {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorPExit {
     pub from_pid: Pid,
@@ -688,13 +704,17 @@ impl MonitorPExit {
     }
 }
 
-// TODO
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Heartbeat;
 
+/// Identifier or name of a process.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProcessRef {
+    /// Identifier of the process.
     Pid(Pid),
+
+    /// Name of the process.
     Name(Atom),
 }
 impl From<Pid> for ProcessRef {
