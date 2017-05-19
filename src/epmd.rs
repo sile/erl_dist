@@ -131,19 +131,19 @@ impl EpmdClient {
                             U16.be(),
                             Utf8(LengthPrefixedBytes(U16.be())),
                             LengthPrefixedBytes(U16.be()))
-                    .map(|t| {
-                        NodeInfo {
-                            port: t.0,
-                            node_type: NodeType::from(t.1),
-                            protocol: Protocol::from(t.2),
-                            highest_version: t.3,
-                            lowest_version: t.4,
-                            name: t.5,
-                            extra: t.6,
-                        }
-                    });
+                        .map(|t| {
+                            NodeInfo {
+                                port: t.0,
+                                node_type: NodeType::from(t.1),
+                                protocol: Protocol::from(t.2),
+                                highest_version: t.3,
+                                lowest_version: t.4,
+                                name: t.5,
+                                extra: t.6,
+                            }
+                        });
                 let resp = (U8.expect_eq(TAG_PORT2_RESP), U8)
-                    .and_then(|(_, result)| { if result == 0 { Some(info) } else { None } });
+                    .and_then(|(_, result)| if result == 0 { Some(info) } else { None });
                 resp.read_from(stream)
             })
             .map(|(_, info)| info)

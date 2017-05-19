@@ -21,21 +21,29 @@ use erl_dist::epmd::NodeInfo;
 
 fn main() {
     let matches = App::new("epmd_cli")
-        .arg(Arg::with_name("EPMD_HOST").short("h").takes_value(true).default_value("127.0.0.1"))
-        .arg(Arg::with_name("EPMD_PORT").short("p").takes_value(true).default_value("4369"))
+        .arg(Arg::with_name("EPMD_HOST")
+                 .short("h")
+                 .takes_value(true)
+                 .default_value("127.0.0.1"))
+        .arg(Arg::with_name("EPMD_PORT")
+                 .short("p")
+                 .takes_value(true)
+                 .default_value("4369"))
         .subcommand(SubCommand::with_name("names"))
         .subcommand(SubCommand::with_name("dump"))
         .subcommand(SubCommand::with_name("node_info")
-            .arg(Arg::with_name("NODE").index(1).required(true)))
+                        .arg(Arg::with_name("NODE").index(1).required(true)))
         .subcommand(SubCommand::with_name("kill"))
         .subcommand(SubCommand::with_name("register")
-            .arg(Arg::with_name("NAME").index(1).required(true))
-            .arg(Arg::with_name("PORT").index(2).required(true))
-            .arg(Arg::with_name("HIDDEN").long("hidden")))
+                        .arg(Arg::with_name("NAME").index(1).required(true))
+                        .arg(Arg::with_name("PORT").index(2).required(true))
+                        .arg(Arg::with_name("HIDDEN").long("hidden")))
         .get_matches();
     let epmd_host = matches.value_of("EPMD_HOST").unwrap();
     let epmd_port = matches.value_of("EPMD_PORT").unwrap();
-    let epmd_addr = format!("{}:{}", epmd_host, epmd_port).parse().expect("Invalid epmd address");
+    let epmd_addr = format!("{}:{}", epmd_host, epmd_port)
+        .parse()
+        .expect("Invalid epmd address");
 
     let client = EpmdClient::new();
     let mut executor = InPlaceExecutor::new().unwrap();
@@ -44,9 +52,12 @@ fn main() {
     if let Some(_matches) = matches.subcommand_matches("names") {
         // 'NAMES_REQ'
         //
-        let monitor =
-            executor.spawn_monitor(connect.and_then(move |socket| client.get_names(socket)));
-        let names = executor.run_fiber(monitor).unwrap().expect("'names' request failed");
+        let monitor = executor
+            .spawn_monitor(connect.and_then(move |socket| client.get_names(socket)));
+        let names = executor
+            .run_fiber(monitor)
+            .unwrap()
+            .expect("'names' request failed");
         println!("Registered Names");
         println!("================\n");
         println!("{:?}", names);
@@ -54,7 +65,10 @@ fn main() {
         // 'DUMP_REQ'
         //
         let monitor = executor.spawn_monitor(connect.and_then(move |socket| client.dump(socket)));
-        let dump = executor.run_fiber(monitor).unwrap().expect("'dump' request failed");
+        let dump = executor
+            .run_fiber(monitor)
+            .unwrap()
+            .expect("'dump' request failed");
         println!("Dump");
         println!("=====\n");
         println!("{:?}", dump);
@@ -63,10 +77,12 @@ fn main() {
         //
         let node = matches.value_of("NODE").unwrap().to_string();
         let monitor =
-            executor.spawn_monitor(connect.and_then(move |socket| {
-                    client.get_node_info(socket, &node)
-                }));
-        let info = executor.run_fiber(monitor).unwrap().expect("'node_info' request failed");
+            executor
+                .spawn_monitor(connect.and_then(move |socket| client.get_node_info(socket, &node)));
+        let info = executor
+            .run_fiber(monitor)
+            .unwrap()
+            .expect("'node_info' request failed");
         println!("Node Info");
         println!("=========\n");
         println!("{:?}", info);
@@ -74,13 +90,20 @@ fn main() {
         // 'KILL_REQ'
         //
         let monitor = executor.spawn_monitor(connect.and_then(move |socket| client.kill(socket)));
-        let result = executor.run_fiber(monitor).unwrap().expect("'kill' request failed");
+        let result = executor
+            .run_fiber(monitor)
+            .unwrap()
+            .expect("'kill' request failed");
         println!("KILLED: {:?}", result);
     } else if let Some(matches) = matches.subcommand_matches("register") {
         // 'ALIVE2_REQ'
         //
         let name = matches.value_of("NAME").unwrap();
-        let port = matches.value_of("PORT").unwrap().parse().expect("Invalid port number");
+        let port = matches
+            .value_of("PORT")
+            .unwrap()
+            .parse()
+            .expect("Invalid port number");
         let hidden = matches.is_present("HIDDEN");
         let mut node = NodeInfo::new(name, port);
         if hidden {
@@ -88,8 +111,10 @@ fn main() {
         }
         let monitor =
             executor.spawn_monitor(connect.and_then(move |socket| client.register(socket, node)));
-        let (_, creation) =
-            executor.run_fiber(monitor).unwrap().expect("'register' request failed");
+        let (_, creation) = executor
+            .run_fiber(monitor)
+            .unwrap()
+            .expect("'register' request failed");
         println!("CREATION: {:?}", creation);
     } else {
         println!("{}", matches.usage());

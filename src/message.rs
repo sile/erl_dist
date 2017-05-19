@@ -68,25 +68,27 @@ impl Message {
                 tag.value as u8
             };
             Ok(match tag {
-                CTRL_TYPE_LINK => Message::from(Link::read_from(ctrl, reader)?),
-                CTRL_TYPE_SEND => Message::from(Send::read_from(ctrl, reader)?),
-                CTRL_TYPE_EXIT => Message::from(Exit::read_from(ctrl, reader)?),
-                CTRL_TYPE_UNLINK => Message::from(Unlink::read_from(ctrl, reader)?),
-                CTRL_TYPE_NODE_LINK => Message::from(NodeLink::read_from(ctrl, reader)?),
-                CTRL_TYPE_REG_SEND => Message::from(RegSend::read_from(ctrl, reader)?),
-                CTRL_TYPE_GROUP_LEADER => Message::from(GroupLeader::read_from(ctrl, reader)?),
-                CTRL_TYPE_EXIT2 => Message::from(Exit2::read_from(ctrl, reader)?),
-                CTRL_TYPE_SEND_TT => Message::from(SendTt::read_from(ctrl, reader)?),
-                CTRL_TYPE_EXIT_TT => Message::from(ExitTt::read_from(ctrl, reader)?),
-                CTRL_TYPE_REG_SEND_TT => Message::from(RegSendTt::read_from(ctrl, reader)?),
-                CTRL_TYPE_EXIT2_TT => Message::from(Exit2Tt::read_from(ctrl, reader)?),
-                CTRL_TYPE_MONITOR_P => Message::from(MonitorP::read_from(ctrl, reader)?),
-                CTRL_TYPE_DEMONITOR_P => Message::from(DemonitorP::read_from(ctrl, reader)?),
-                CTRL_TYPE_MONITOR_P_EXIT => Message::from(MonitorPExit::read_from(ctrl, reader)?),
-                _ => {
-                    return Err(invalid_data!("Unknown control message: type={}", tag));
-                }
-            })
+                   CTRL_TYPE_LINK => Message::from(Link::read_from(ctrl, reader)?),
+                   CTRL_TYPE_SEND => Message::from(Send::read_from(ctrl, reader)?),
+                   CTRL_TYPE_EXIT => Message::from(Exit::read_from(ctrl, reader)?),
+                   CTRL_TYPE_UNLINK => Message::from(Unlink::read_from(ctrl, reader)?),
+                   CTRL_TYPE_NODE_LINK => Message::from(NodeLink::read_from(ctrl, reader)?),
+                   CTRL_TYPE_REG_SEND => Message::from(RegSend::read_from(ctrl, reader)?),
+                   CTRL_TYPE_GROUP_LEADER => Message::from(GroupLeader::read_from(ctrl, reader)?),
+                   CTRL_TYPE_EXIT2 => Message::from(Exit2::read_from(ctrl, reader)?),
+                   CTRL_TYPE_SEND_TT => Message::from(SendTt::read_from(ctrl, reader)?),
+                   CTRL_TYPE_EXIT_TT => Message::from(ExitTt::read_from(ctrl, reader)?),
+                   CTRL_TYPE_REG_SEND_TT => Message::from(RegSendTt::read_from(ctrl, reader)?),
+                   CTRL_TYPE_EXIT2_TT => Message::from(Exit2Tt::read_from(ctrl, reader)?),
+                   CTRL_TYPE_MONITOR_P => Message::from(MonitorP::read_from(ctrl, reader)?),
+                   CTRL_TYPE_DEMONITOR_P => Message::from(DemonitorP::read_from(ctrl, reader)?),
+                   CTRL_TYPE_MONITOR_P_EXIT => {
+                       Message::from(MonitorPExit::read_from(ctrl, reader)?)
+                   }
+                   _ => {
+                       return Err(invalid_data!("Unknown control message: type={}", tag));
+                   }
+               })
         }
     }
 
@@ -125,9 +127,9 @@ impl Message {
     /// Makes a new `Link` message.
     pub fn link(from_pid: Pid, to_pid: Pid) -> Self {
         Message::from(Link {
-            from_pid: from_pid,
-            to_pid: to_pid,
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                      })
     }
 
     /// Makes a new `Send` message.
@@ -135,9 +137,9 @@ impl Message {
         where Term: From<T>
     {
         Message::from(Send {
-            to_pid: to_pid,
-            message: Term::from(message),
-        })
+                          to_pid: to_pid,
+                          message: Term::from(message),
+                      })
     }
 
     /// Makes a new `Exit` message.
@@ -145,18 +147,18 @@ impl Message {
         where Term: From<T>
     {
         Message::from(Exit {
-            from_pid: from_pid,
-            to_pid: to_pid,
-            reason: Term::from(reason),
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                          reason: Term::from(reason),
+                      })
     }
 
     /// Makes a new `Unlink` message.
     pub fn unlink(from_pid: Pid, to_pid: Pid) -> Self {
         Message::from(Unlink {
-            from_pid: from_pid,
-            to_pid: to_pid,
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                      })
     }
 
     /// Makes a new `NodeLink` message.
@@ -170,18 +172,18 @@ impl Message {
               Term: From<T>
     {
         Message::from(RegSend {
-            from_pid: from_pid,
-            to_name: Atom::from(to_name),
-            message: Term::from(message),
-        })
+                          from_pid: from_pid,
+                          to_name: Atom::from(to_name),
+                          message: Term::from(message),
+                      })
     }
 
     /// Makes a new `GroupLeader` message.
     pub fn group_leader(from_pid: Pid, to_pid: Pid) -> Self {
         Message::from(GroupLeader {
-            from_pid: from_pid,
-            to_pid: to_pid,
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                      })
     }
 
     /// Makes a new `Exit2` message.
@@ -189,10 +191,10 @@ impl Message {
         where Term: From<T>
     {
         Message::from(Exit2 {
-            from_pid: from_pid,
-            to_pid: to_pid,
-            reason: Term::from(reason),
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                          reason: Term::from(reason),
+                      })
     }
 
     /// Makes a new `SendTt` message.
@@ -201,10 +203,10 @@ impl Message {
               Term: From<U>
     {
         Message::from(SendTt {
-            to_pid: to_pid,
-            trace_token: Term::from(trace_token),
-            message: Term::from(message),
-        })
+                          to_pid: to_pid,
+                          trace_token: Term::from(trace_token),
+                          message: Term::from(message),
+                      })
     }
 
     /// Makes a new `ExitTt` message.
@@ -213,11 +215,11 @@ impl Message {
               Term: From<U>
     {
         Message::from(ExitTt {
-            from_pid: from_pid,
-            to_pid: to_pid,
-            trace_token: Term::from(trace_token),
-            reason: Term::from(reason),
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                          trace_token: Term::from(trace_token),
+                          reason: Term::from(reason),
+                      })
     }
 
     /// Makes a new `RegSendTt` message.
@@ -227,11 +229,11 @@ impl Message {
               Term: From<U>
     {
         Message::from(RegSendTt {
-            from_pid: from_pid,
-            to_name: Atom::from(to_name),
-            trace_token: Term::from(trace_token),
-            message: Term::from(message),
-        })
+                          from_pid: from_pid,
+                          to_name: Atom::from(to_name),
+                          trace_token: Term::from(trace_token),
+                          message: Term::from(message),
+                      })
     }
 
     /// Makes a new `Exit2Tt` message.
@@ -240,11 +242,11 @@ impl Message {
               Term: From<U>
     {
         Message::from(Exit2Tt {
-            from_pid: from_pid,
-            to_pid: to_pid,
-            trace_token: Term::from(trace_token),
-            reason: Term::from(reason),
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                          trace_token: Term::from(trace_token),
+                          reason: Term::from(reason),
+                      })
     }
 
     /// Makes a new `MonitorP` message.
@@ -252,10 +254,10 @@ impl Message {
         where ProcessRef: From<T>
     {
         Message::from(MonitorP {
-            from_pid: from_pid,
-            to_proc: From::from(to_proc),
-            reference: reference,
-        })
+                          from_pid: from_pid,
+                          to_proc: From::from(to_proc),
+                          reference: reference,
+                      })
     }
 
     /// Makes a new `DemonitorP` message.
@@ -263,10 +265,10 @@ impl Message {
         where ProcessRef: From<T>
     {
         Message::from(DemonitorP {
-            from_pid: from_pid,
-            to_proc: From::from(to_proc),
-            reference: reference,
-        })
+                          from_pid: from_pid,
+                          to_proc: From::from(to_proc),
+                          reference: reference,
+                      })
     }
 
     /// Makes a new `MonitorPExit` message.
@@ -274,11 +276,11 @@ impl Message {
         where Term: From<T>
     {
         Message::from(MonitorPExit {
-            from_pid: from_pid,
-            to_pid: to_pid,
-            reference: reference,
-            reason: Term::from(reason),
-        })
+                          from_pid: from_pid,
+                          to_pid: to_pid,
+                          reference: reference,
+                          reason: Term::from(reason),
+                      })
     }
 }
 macro_rules! impl_from_for_message {
@@ -322,9 +324,9 @@ impl Link {
         let from_pid: &Pid = ctrl.elements[1].try_as_ref().unwrap();
         let to_pid: &Pid = ctrl.elements[2].try_as_ref().unwrap();
         Ok(Link {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+           })
     }
 }
 
@@ -345,9 +347,9 @@ impl Send {
         let to_pid: &Pid = ctrl.elements[2].try_as_ref().unwrap();
         let message = read_term(reader)?;
         Ok(Send {
-            to_pid: to_pid.clone(),
-            message: message,
-        })
+               to_pid: to_pid.clone(),
+               message: message,
+           })
     }
 }
 
@@ -368,10 +370,10 @@ impl Exit {
         let to_pid: &Pid = ctrl.elements[2].try_as_ref().unwrap();
         let reason = ctrl.elements[3].clone();
         Ok(Exit {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-            reason: reason,
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+               reason: reason,
+           })
     }
 }
 
@@ -390,9 +392,9 @@ impl Unlink {
         let from_pid: &Pid = ctrl.elements[1].try_as_ref().unwrap();
         let to_pid: &Pid = ctrl.elements[2].try_as_ref().unwrap();
         Ok(Unlink {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+           })
     }
 }
 
@@ -431,10 +433,10 @@ impl RegSend {
         let to_name: &Atom = ctrl.elements[3].try_as_ref().unwrap();
         let message = read_term(reader)?;
         Ok(RegSend {
-            from_pid: from_pid.clone(),
-            to_name: to_name.clone(),
-            message: message,
-        })
+               from_pid: from_pid.clone(),
+               to_name: to_name.clone(),
+               message: message,
+           })
     }
 }
 
@@ -453,9 +455,9 @@ impl GroupLeader {
         let from_pid: &Pid = ctrl.elements[1].try_as_ref().unwrap();
         let to_pid: &Pid = ctrl.elements[2].try_as_ref().unwrap();
         Ok(GroupLeader {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+           })
     }
 }
 
@@ -476,10 +478,10 @@ impl Exit2 {
         let to_pid: &Pid = ctrl.elements[2].try_as_ref().unwrap();
         let reason = ctrl.elements[3].clone();
         Ok(Exit2 {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-            reason: reason,
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+               reason: reason,
+           })
     }
 }
 
@@ -505,10 +507,10 @@ impl SendTt {
         let trace_token = ctrl.elements[3].clone();
         let message = read_term(reader)?;
         Ok(SendTt {
-            to_pid: to_pid.clone(),
-            trace_token: trace_token,
-            message: message,
-        })
+               to_pid: to_pid.clone(),
+               trace_token: trace_token,
+               message: message,
+           })
     }
 }
 
@@ -535,11 +537,11 @@ impl ExitTt {
         let trace_token = ctrl.elements[3].clone();
         let reason = ctrl.elements[4].clone();
         Ok(ExitTt {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-            trace_token: trace_token,
-            reason: reason,
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+               trace_token: trace_token,
+               reason: reason,
+           })
     }
 }
 
@@ -568,11 +570,11 @@ impl RegSendTt {
         let trace_token = ctrl.elements[4].clone();
         let message = read_term(reader)?;
         Ok(RegSendTt {
-            from_pid: from_pid.clone(),
-            to_name: to_name.clone(),
-            trace_token: trace_token,
-            message: message,
-        })
+               from_pid: from_pid.clone(),
+               to_name: to_name.clone(),
+               trace_token: trace_token,
+               message: message,
+           })
     }
 }
 
@@ -599,11 +601,11 @@ impl Exit2Tt {
         let trace_token = ctrl.elements[3].clone();
         let reason = ctrl.elements[4].clone();
         Ok(Exit2Tt {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-            trace_token: trace_token,
-            reason: reason,
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+               trace_token: trace_token,
+               reason: reason,
+           })
     }
 }
 
@@ -633,10 +635,10 @@ impl MonitorP {
         };
         let reference: &Reference = ctrl.elements[3].try_as_ref().unwrap();
         Ok(MonitorP {
-            from_pid: from_pid.clone(),
-            to_proc: to_proc,
-            reference: reference.clone(),
-        })
+               from_pid: from_pid.clone(),
+               to_proc: to_proc,
+               reference: reference.clone(),
+           })
     }
 }
 
@@ -666,10 +668,10 @@ impl DemonitorP {
         };
         let reference: &Reference = ctrl.elements[3].try_as_ref().unwrap();
         Ok(DemonitorP {
-            from_pid: from_pid.clone(),
-            to_proc: to_proc,
-            reference: reference.clone(),
-        })
+               from_pid: from_pid.clone(),
+               to_proc: to_proc,
+               reference: reference.clone(),
+           })
     }
 }
 
@@ -696,11 +698,11 @@ impl MonitorPExit {
         let reference: &Reference = ctrl.elements[3].try_as_ref().unwrap();
         let reason = ctrl.elements[4].clone();
         Ok(MonitorPExit {
-            from_pid: from_pid.clone(),
-            to_pid: to_pid.clone(),
-            reference: reference.clone(),
-            reason: reason,
-        })
+               from_pid: from_pid.clone(),
+               to_pid: to_pid.clone(),
+               reference: reference.clone(),
+               reason: reason,
+           })
     }
 }
 
@@ -740,14 +742,15 @@ fn write_term<W: Write, T>(writer: &mut W, term: T) -> io::Result<()>
     where Term: From<T>
 {
     let term = Term::from(term);
-    term.encode(writer).map_err(|e| {
-        use eetf::EncodeError;
-        if let EncodeError::Io(e) = e {
-            e
-        } else {
-            Error::new(ErrorKind::InvalidInput, Box::new(e))
-        }
-    })
+    term.encode(writer)
+        .map_err(|e| {
+                     use eetf::EncodeError;
+                     if let EncodeError::Io(e) = e {
+                         e
+                     } else {
+                         Error::new(ErrorKind::InvalidInput, Box::new(e))
+                     }
+                 })
 }
 
 fn read_term<R: Read, T>(reader: &mut R) -> io::Result<T>
@@ -755,14 +758,15 @@ fn read_term<R: Read, T>(reader: &mut R) -> io::Result<T>
 {
     use eetf::DecodeError;
     Term::decode(reader)
-        .map_err(|e| {
-            if let DecodeError::Io(e) = e {
-                e
-            } else {
-                Error::new(ErrorKind::InvalidData, Box::new(e))
-            }
-        })
-        .and_then(|term| term.try_into().map_err(|t| invalid_data!("Unexpected term: {}", t)))
+        .map_err(|e| if let DecodeError::Io(e) = e {
+                     e
+                 } else {
+                     Error::new(ErrorKind::InvalidData, Box::new(e))
+                 })
+        .and_then(|term| {
+                      term.try_into()
+                          .map_err(|t| invalid_data!("Unexpected term: {}", t))
+                  })
 }
 
 fn tagged_tuple1(tag: u8) -> Tuple {

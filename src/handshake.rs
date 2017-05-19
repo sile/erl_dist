@@ -222,32 +222,42 @@ impl Handshake {
             name: String::new(), // Dummy value
             flags: DistributionFlags::empty(), // Dummy value
         };
-        let Handshake { self_node_name, self_cookie, peer_cookie, flags } = self.clone();
+        let Handshake {
+            self_node_name,
+            self_cookie,
+            peer_cookie,
+            flags,
+        } = self.clone();
         futures::finished(peer)
             .and_then(move |peer| {
-                // send_name
-                with_len((TAG_NAME, DISTRIBUTION_VERSION.be(), flags.bits().be(), self_node_name))
-                    .write_into(peer)
-            })
+                          // send_name
+                          with_len((TAG_NAME,
+                                    DISTRIBUTION_VERSION.be(),
+                                    flags.bits().be(),
+                                    self_node_name))
+                                  .write_into(peer)
+                      })
             .and_then(|(peer, _)| {
                 // recv_status
                 let status = U16.be()
                     .and_then(|len| {
-                        let status = Utf8(vec![0; len as usize -1]).and_then(check_status);
-                        (U8.expect_eq(TAG_STATUS), status)
-                    });
+                                  let status = Utf8(vec![0; len as usize -1])
+                                      .and_then(check_status);
+                                  (U8.expect_eq(TAG_STATUS), status)
+                              });
                 status.read_from(peer)
             })
             .and_then(|(peer, _)| {
                 // recv_challenge
-                let challenge = U16.be().and_then(|len| {
-                    let name = Utf8(vec![0; len as usize - 11]); // TODO: boundary check
-                    (U8.expect_eq(TAG_CHALLENGE),
-                     U16.be().expect_eq(DISTRIBUTION_VERSION),
-                     U32.be(),
-                     U32.be(),
-                     name)
-                });
+                let challenge = U16.be()
+                    .and_then(|len| {
+                        let name = Utf8(vec![0; len as usize - 11]); // TODO: boundary check
+                        (U8.expect_eq(TAG_CHALLENGE),
+                         U16.be().expect_eq(DISTRIBUTION_VERSION),
+                         U32.be(),
+                         U32.be(),
+                         name)
+                    });
                 challenge.read_from(peer)
             })
             .and_then(move |(mut peer, (_, _, peer_flags, peer_challenge, peer_name))| {
@@ -264,11 +274,11 @@ impl Handshake {
                 reply.write_into(peer)
             })
             .and_then(|(peer, self_digest)| {
-                // recv_challenge_ack
-                let digest = Buf([0; 16]).expect_eq(self_digest);
-                let ack = (U16.be().expect_eq(17), U8.expect_eq(TAG_ACK), digest);
-                ack.read_from(peer)
-            })
+                          // recv_challenge_ack
+                          let digest = Buf([0; 16]).expect_eq(self_digest);
+                          let ack = (U16.be().expect_eq(17), U8.expect_eq(TAG_ACK), digest);
+                          ack.read_from(peer)
+                      })
             .map(|(peer, _)| peer)
             .map_err(|e| e.into_error())
             .boxed()
@@ -325,17 +335,23 @@ impl Handshake {
             name: String::new(), // Dummy value
             flags: DistributionFlags::empty(), // Dummy value
         };
-        let Handshake { self_node_name, self_cookie, peer_cookie, flags } = self.clone();
+        let Handshake {
+            self_node_name,
+            self_cookie,
+            peer_cookie,
+            flags,
+        } = self.clone();
         futures::finished(peer)
             .and_then(|peer| {
                 // recv_name
-                let recv_name = U16.be().and_then(|len| {
-                    let peer_name = Utf8(vec![0; len as usize - 7]);
-                    (U8.expect_eq(TAG_NAME),
-                     U16.be().expect_eq(DISTRIBUTION_VERSION),
-                     U32.be(),
-                     peer_name)
-                });
+                let recv_name = U16.be()
+                    .and_then(|len| {
+                                  let peer_name = Utf8(vec![0; len as usize - 7]);
+                                  (U8.expect_eq(TAG_NAME),
+                                   U16.be().expect_eq(DISTRIBUTION_VERSION),
+                                   U32.be(),
+                                   peer_name)
+                              });
                 recv_name.read_from(peer)
             })
             .and_then(move |(mut peer, (_, _, peer_flags, peer_name))| {
@@ -358,22 +374,24 @@ impl Handshake {
                                  peer.flags.bits().be(),
                                  self_challenge.be(),
                                  self_node_name);
-                with_len(challenge).map(move |_| self_digest).write_into(peer)
+                with_len(challenge)
+                    .map(move |_| self_digest)
+                    .write_into(peer)
             })
             .and_then(|(peer, self_digest)| {
-                // recv_challenge_reply
-                let reply = (U16.be().expect_eq(21),
-                             U8.expect_eq(TAG_REPLY),
-                             U32.be(),
-                             Buf([0; 16]).expect_eq(self_digest));
-                reply.read_from(peer)
-            })
+                          // recv_challenge_reply
+                          let reply = (U16.be().expect_eq(21),
+                                       U8.expect_eq(TAG_REPLY),
+                                       U32.be(),
+                                       Buf([0; 16]).expect_eq(self_digest));
+                          reply.read_from(peer)
+                      })
             .and_then(move |(peer, (_, _, peer_challenge, _))| {
-                // send_challenge_ack
-                let peer_digest = calc_digest(&peer_cookie, peer_challenge);
-                let ack = (TAG_ACK, Buf(peer_digest));
-                with_len(ack).write_into(peer)
-            })
+                          // send_challenge_ack
+                          let peer_digest = calc_digest(&peer_cookie, peer_challenge);
+                          let ack = (TAG_ACK, Buf(peer_digest));
+                          with_len(ack).write_into(peer)
+                      })
             .map(|(peer, _)| peer)
             .map_err(|e| e.into_error())
             .boxed()
