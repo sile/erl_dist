@@ -16,8 +16,8 @@ futures = "0.1"
 handy_async = "0.2"
 md5 = "0.3"
 rand = "0.3"
-bitflags = "0.7"
+bitflags = "0.8"
 
 [dev-dependencies]
-clap = "2.19"
+clap = "2"
 fibers = "0.1"

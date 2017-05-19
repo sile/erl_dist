@@ -37,7 +37,7 @@ const TAG_ALIVE2_RESP: u8 = 121;
 /// # extern crate erl_dist;
 /// # extern crate fibers;
 /// # extern crate futures;
-/// use fibers::{Executor, InPlaceExecutor};
+/// use fibers::{Executor, InPlaceExecutor, Spawn};
 /// use fibers::net::TcpStream;
 /// use futures::Future;
 /// use erl_dist::epmd::{DEFAULT_EPMD_PORT, EpmdClient};

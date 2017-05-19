@@ -190,7 +190,7 @@ impl Handshake {
     /// # extern crate erl_dist;
     /// # extern crate futures;
     /// # extern crate fibers;
-    /// use fibers::{Executor, InPlaceExecutor};
+    /// use fibers::{Executor, InPlaceExecutor, Spawn};
     /// use fibers::net::TcpStream;
     /// use futures::Future;
     /// use erl_dist::Handshake;

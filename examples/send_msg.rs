@@ -17,7 +17,7 @@ extern crate eetf;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use clap::{App, Arg};
-use fibers::{Executor, InPlaceExecutor};
+use fibers::{Executor, InPlaceExecutor, Spawn};
 use fibers::net::TcpStream;
 use futures::{Sink, Future};
 use futures::future::Either;

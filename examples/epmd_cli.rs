@@ -13,7 +13,7 @@ extern crate futures;
 extern crate clap;
 
 use clap::{App, Arg, SubCommand};
-use fibers::{Executor, InPlaceExecutor};
+use fibers::{Executor, InPlaceExecutor, Spawn};
 use fibers::net::TcpStream;
 use futures::Future;
 use erl_dist::EpmdClient;
