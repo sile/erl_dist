@@ -2,6 +2,7 @@ erl_dist
 ========
 
 [![erl_dist](http://meritbadge.herokuapp.com/erl_dist)](https://crates.io/crates/erl_dist)
+[![Documentation](https://docs.rs/erl_dist/badge.svg)](https://docs.rs/erl_dist)
 [![Build Status](https://travis-ci.org/sile/erl_dist.svg?branch=master)](https://travis-ci.org/sile/erl_dist)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
