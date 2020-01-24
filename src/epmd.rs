@@ -5,12 +5,12 @@
 //!
 //! See [12.1 EPMD Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id103099)
 //! for more details about EPMD protocol.
-use std::io::{Read, Write, Error};
-use futures::{self, Future, BoxFuture};
-use handy_async::pattern::{Pattern, Endian};
+use futures::{self, BoxFuture, Future};
+use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
 use handy_async::pattern::combinators::BE;
-use handy_async::pattern::read::{U8, U16, U32, All, Utf8, LengthPrefixedBytes};
-use handy_async::io::{ReadFrom, WriteInto, ExternalSize};
+use handy_async::pattern::read::{All, LengthPrefixedBytes, Utf8, U16, U32, U8};
+use handy_async::pattern::{Endian, Pattern};
+use std::io::{Error, Read, Write};
 
 use Creation;
 
@@ -82,25 +82,32 @@ impl EpmdClient {
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
     pub fn register<S>(&self, stream: S, node: NodeInfo) -> BoxFuture<(S, Creation), Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         futures::finished(stream)
             .and_then(move |stream| {
-                let req = (TAG_ALIVE2_REQ,
-                           node.port.be(),
-                           node.node_type.as_u8(),
-                           node.protocol.as_u8(),
-                           node.highest_version.be(),
-                           node.lowest_version.be(),
-                           ((node.name.len() as u16).be(), node.name),
-                           ((node.extra.len() as u16).be(), node.extra));
+                let req = (
+                    TAG_ALIVE2_REQ,
+                    node.port.be(),
+                    node.node_type.as_u8(),
+                    node.protocol.as_u8(),
+                    node.highest_version.be(),
+                    node.lowest_version.be(),
+                    ((node.name.len() as u16).be(), node.name),
+                    ((node.extra.len() as u16).be(), node.extra),
+                );
                 with_len(req).write_into(stream)
             })
             .and_then(|(stream, _)| {
                 let to_creation = |c| {
                     Creation::from_u16(c).ok_or_else(|| invalid_data!("Too large creation: {}", c))
                 };
-                (U8.expect_eq(TAG_ALIVE2_RESP), U8.expect_eq(0), U16.be().and_then(to_creation))
+                (
+                    U8.expect_eq(TAG_ALIVE2_RESP),
+                    U8.expect_eq(0),
+                    U16.be().and_then(to_creation),
+                )
                     .read_from(stream)
             })
             .map(|(stream, (_, _, creation))| (stream, creation))
@@ -118,32 +125,38 @@ impl EpmdClient {
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
     pub fn get_node_info<S>(&self, stream: S, node_name: &str) -> BoxFuture<Option<NodeInfo>, Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         let name = node_name.to_string();
         futures::finished((stream, ()))
             .and_then(|(stream, _)| with_len((TAG_PORT_PLEASE2_REQ, name)).write_into(stream))
             .and_then(|(stream, _)| {
-                let info = (U16.be(),
-                            U8,
-                            U8,
-                            U16.be(),
-                            U16.be(),
-                            Utf8(LengthPrefixedBytes(U16.be())),
-                            LengthPrefixedBytes(U16.be()))
-                        .map(|t| {
-                            NodeInfo {
-                                port: t.0,
-                                node_type: NodeType::from(t.1),
-                                protocol: Protocol::from(t.2),
-                                highest_version: t.3,
-                                lowest_version: t.4,
-                                name: t.5,
-                                extra: t.6,
-                            }
-                        });
-                let resp = (U8.expect_eq(TAG_PORT2_RESP), U8)
-                    .and_then(|(_, result)| if result == 0 { Some(info) } else { None });
+                let info = (
+                    U16.be(),
+                    U8,
+                    U8,
+                    U16.be(),
+                    U16.be(),
+                    Utf8(LengthPrefixedBytes(U16.be())),
+                    LengthPrefixedBytes(U16.be()),
+                )
+                    .map(|t| NodeInfo {
+                        port: t.0,
+                        node_type: NodeType::from(t.1),
+                        protocol: Protocol::from(t.2),
+                        highest_version: t.3,
+                        lowest_version: t.4,
+                        name: t.5,
+                        extra: t.6,
+                    });
+                let resp = (U8.expect_eq(TAG_PORT2_RESP), U8).and_then(|(_, result)| {
+                    if result == 0 {
+                        Some(info)
+                    } else {
+                        None
+                    }
+                });
                 resp.read_from(stream)
             })
             .map(|(_, info)| info)
@@ -163,7 +176,8 @@ impl EpmdClient {
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
     pub fn kill<S>(&self, stream: S) -> BoxFuture<String, Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         futures::finished((stream, ()))
             .and_then(|(stream, _)| with_len(TAG_KILL_REQ).write_into(stream))
@@ -183,7 +197,8 @@ impl EpmdClient {
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
     pub fn get_names<S>(&self, stream: S) -> BoxFuture<String, Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         futures::finished((stream, ()))
             .and_then(|(stream, _)| with_len(TAG_NAMES_REQ).write_into(stream))
@@ -216,7 +231,8 @@ impl EpmdClient {
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
     pub fn dump<S>(&self, stream: S) -> BoxFuture<String, Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         futures::finished((stream, ()))
             .and_then(|(stream, _)| with_len(TAG_DUMP_REQ).write_into(stream))

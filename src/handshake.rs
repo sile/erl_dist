@@ -5,14 +5,14 @@
 //! See [12.2 Distribution Handshake]
 //! (http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id104553)
 //! for more details about distribution handshake.
-use std::io::{Error, ErrorKind, Read, Write, Result};
+use futures::{self, BoxFuture, Future};
+use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
+use handy_async::pattern::combinators::BE;
+use handy_async::pattern::read::{Utf8, U16, U32, U8};
+use handy_async::pattern::{Buf, Endian, Pattern};
 use md5;
 use rand;
-use futures::{self, Future, BoxFuture};
-use handy_async::pattern::{Pattern, Endian, Buf};
-use handy_async::pattern::combinators::BE;
-use handy_async::pattern::read::{U8, U16, U32, Utf8};
-use handy_async::io::{ReadFrom, WriteInto, ExternalSize};
+use std::io::{Error, ErrorKind, Read, Result, Write};
 
 /// The distribution version this crate can handle.
 pub const DISTRIBUTION_VERSION: u16 = 5;
@@ -97,9 +97,16 @@ impl Default for DistributionFlags {
     /// # ;
     /// ```
     fn default() -> Self {
-        DFLAG_EXTENDED_REFERENCES | DFLAG_EXTENDED_PIDS_PORTS | DFLAG_FUN_TAGS |
-        DFLAG_NEW_FUN_TAGS | DFLAG_EXPORT_PTR_TAG | DFLAG_BIT_BINARIES |
-        DFLAG_NEW_FLOATS | DFLAG_SMALL_ATOM_TAGS | DFLAG_UTF8_ATOMS | DFLAG_MAP_TAGS
+        DFLAG_EXTENDED_REFERENCES
+            | DFLAG_EXTENDED_PIDS_PORTS
+            | DFLAG_FUN_TAGS
+            | DFLAG_NEW_FUN_TAGS
+            | DFLAG_EXPORT_PTR_TAG
+            | DFLAG_BIT_BINARIES
+            | DFLAG_NEW_FLOATS
+            | DFLAG_SMALL_ATOM_TAGS
+            | DFLAG_UTF8_ATOMS
+            | DFLAG_MAP_TAGS
     }
 }
 
@@ -215,11 +222,12 @@ impl Handshake {
     /// See the files in the ["example" directory]
     /// (https://github.com/sile/erl_dist/tree/master/examples) for more examples.
     pub fn connect<S>(&self, peer: S) -> BoxFuture<Peer<S>, Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         let peer = Peer {
             stream: peer,
-            name: String::new(), // Dummy value
+            name: String::new(),               // Dummy value
             flags: DistributionFlags::empty(), // Dummy value
         };
         let Handshake {
@@ -230,55 +238,58 @@ impl Handshake {
         } = self.clone();
         futures::finished(peer)
             .and_then(move |peer| {
-                          // send_name
-                          with_len((TAG_NAME,
-                                    DISTRIBUTION_VERSION.be(),
-                                    flags.bits().be(),
-                                    self_node_name))
-                                  .write_into(peer)
-                      })
+                // send_name
+                with_len((
+                    TAG_NAME,
+                    DISTRIBUTION_VERSION.be(),
+                    flags.bits().be(),
+                    self_node_name,
+                ))
+                .write_into(peer)
+            })
             .and_then(|(peer, _)| {
                 // recv_status
-                let status = U16.be()
-                    .and_then(|len| {
-                                  let status = Utf8(vec![0; len as usize -1])
-                                      .and_then(check_status);
-                                  (U8.expect_eq(TAG_STATUS), status)
-                              });
+                let status = U16.be().and_then(|len| {
+                    let status = Utf8(vec![0; len as usize - 1]).and_then(check_status);
+                    (U8.expect_eq(TAG_STATUS), status)
+                });
                 status.read_from(peer)
             })
             .and_then(|(peer, _)| {
                 // recv_challenge
-                let challenge = U16.be()
-                    .and_then(|len| {
-                        let name = Utf8(vec![0; len as usize - 11]); // TODO: boundary check
-                        (U8.expect_eq(TAG_CHALLENGE),
-                         U16.be().expect_eq(DISTRIBUTION_VERSION),
-                         U32.be(),
-                         U32.be(),
-                         name)
-                    });
+                let challenge = U16.be().and_then(|len| {
+                    let name = Utf8(vec![0; len as usize - 11]); // TODO: boundary check
+                    (
+                        U8.expect_eq(TAG_CHALLENGE),
+                        U16.be().expect_eq(DISTRIBUTION_VERSION),
+                        U32.be(),
+                        U32.be(),
+                        name,
+                    )
+                });
                 challenge.read_from(peer)
             })
-            .and_then(move |(mut peer, (_, _, peer_flags, peer_challenge, peer_name))| {
-                // send_challenge_reply
-                peer.name = peer_name;
-                peer.flags = DistributionFlags::from_bits_truncate(peer_flags);
+            .and_then(
+                move |(mut peer, (_, _, peer_flags, peer_challenge, peer_name))| {
+                    // send_challenge_reply
+                    peer.name = peer_name;
+                    peer.flags = DistributionFlags::from_bits_truncate(peer_flags);
 
-                let peer_digest = calc_digest(&peer_cookie, peer_challenge);
-                let self_challenge = rand::random::<u32>();
-                let self_digest = calc_digest(&self_cookie, self_challenge);
+                    let peer_digest = calc_digest(&peer_cookie, peer_challenge);
+                    let self_challenge = rand::random::<u32>();
+                    let self_digest = calc_digest(&self_cookie, self_challenge);
 
-                let reply = with_len((TAG_REPLY, self_challenge.be(), Buf(peer_digest)))
-                    .map(move |_| self_digest);
-                reply.write_into(peer)
-            })
+                    let reply = with_len((TAG_REPLY, self_challenge.be(), Buf(peer_digest)))
+                        .map(move |_| self_digest);
+                    reply.write_into(peer)
+                },
+            )
             .and_then(|(peer, self_digest)| {
-                          // recv_challenge_ack
-                          let digest = Buf([0; 16]).expect_eq(self_digest);
-                          let ack = (U16.be().expect_eq(17), U8.expect_eq(TAG_ACK), digest);
-                          ack.read_from(peer)
-                      })
+                // recv_challenge_ack
+                let digest = Buf([0; 16]).expect_eq(self_digest);
+                let ack = (U16.be().expect_eq(17), U8.expect_eq(TAG_ACK), digest);
+                ack.read_from(peer)
+            })
             .map(|(peer, _)| peer)
             .map_err(|e| e.into_error())
             .boxed()
@@ -328,11 +339,12 @@ impl Handshake {
     /// (https://github.com/sile/erl_dist/tree/master/examples/recv_msg.rs)
     /// file for a running example.
     pub fn accept<S>(&self, peer: S) -> BoxFuture<Peer<S>, Error>
-        where S: Read + Write + Send + 'static
+    where
+        S: Read + Write + Send + 'static,
     {
         let peer = Peer {
             stream: peer,
-            name: String::new(), // Dummy value
+            name: String::new(),               // Dummy value
             flags: DistributionFlags::empty(), // Dummy value
         };
         let Handshake {
@@ -344,14 +356,15 @@ impl Handshake {
         futures::finished(peer)
             .and_then(|peer| {
                 // recv_name
-                let recv_name = U16.be()
-                    .and_then(|len| {
-                                  let peer_name = Utf8(vec![0; len as usize - 7]);
-                                  (U8.expect_eq(TAG_NAME),
-                                   U16.be().expect_eq(DISTRIBUTION_VERSION),
-                                   U32.be(),
-                                   peer_name)
-                              });
+                let recv_name = U16.be().and_then(|len| {
+                    let peer_name = Utf8(vec![0; len as usize - 7]);
+                    (
+                        U8.expect_eq(TAG_NAME),
+                        U16.be().expect_eq(DISTRIBUTION_VERSION),
+                        U32.be(),
+                        peer_name,
+                    )
+                });
                 recv_name.read_from(peer)
             })
             .and_then(move |(mut peer, (_, _, peer_flags, peer_name))| {
@@ -369,29 +382,33 @@ impl Handshake {
                 // send_challenge
                 let self_challenge = rand::random::<u32>();
                 let self_digest = calc_digest(&self_cookie, self_challenge);
-                let challenge = (TAG_CHALLENGE,
-                                 DISTRIBUTION_VERSION.be(),
-                                 peer.flags.bits().be(),
-                                 self_challenge.be(),
-                                 self_node_name);
+                let challenge = (
+                    TAG_CHALLENGE,
+                    DISTRIBUTION_VERSION.be(),
+                    peer.flags.bits().be(),
+                    self_challenge.be(),
+                    self_node_name,
+                );
                 with_len(challenge)
                     .map(move |_| self_digest)
                     .write_into(peer)
             })
             .and_then(|(peer, self_digest)| {
-                          // recv_challenge_reply
-                          let reply = (U16.be().expect_eq(21),
-                                       U8.expect_eq(TAG_REPLY),
-                                       U32.be(),
-                                       Buf([0; 16]).expect_eq(self_digest));
-                          reply.read_from(peer)
-                      })
+                // recv_challenge_reply
+                let reply = (
+                    U16.be().expect_eq(21),
+                    U8.expect_eq(TAG_REPLY),
+                    U32.be(),
+                    Buf([0; 16]).expect_eq(self_digest),
+                );
+                reply.read_from(peer)
+            })
             .and_then(move |(peer, (_, _, peer_challenge, _))| {
-                          // send_challenge_ack
-                          let peer_digest = calc_digest(&peer_cookie, peer_challenge);
-                          let ack = (TAG_ACK, Buf(peer_digest));
-                          with_len(ack).write_into(peer)
-                      })
+                // send_challenge_ack
+                let peer_digest = calc_digest(&peer_cookie, peer_challenge);
+                let ack = (TAG_ACK, Buf(peer_digest));
+                with_len(ack).write_into(peer)
+            })
             .map(|(peer, _)| peer)
             .map_err(|e| e.into_error())
             .boxed()
@@ -400,11 +417,12 @@ impl Handshake {
 
 fn check_status(status: String) -> Result<()> {
     match status.as_str() {
-        "ok" |
-        "ok_simultaneous" => Ok(()),
+        "ok" | "ok_simultaneous" => Ok(()),
         "nok" | "now_allowed" | "alive" => {
-            let e = Error::new(ErrorKind::ConnectionRefused,
-                               format!("Handshake request is refused by the reason {:?}", status));
+            let e = Error::new(
+                ErrorKind::ConnectionRefused,
+                format!("Handshake request is refused by the reason {:?}", status),
+            );
             Err(e)
         }
         _ => {
