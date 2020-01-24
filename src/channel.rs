@@ -1,12 +1,11 @@
 //! Channel implementation for sending/receiving messages between distributed Erlang nodes.
+use crate::message::Message;
 use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend};
 use futures::{BoxFuture, Stream};
 use handy_async::io::futures::WriteAll;
 use handy_async::io::AsyncWrite;
 use std::io::{Error, Read, Write};
 use std::mem;
-
-use message::Message;
 
 /// Creates the receiver side of a channel to communicate with the node connected by `reader`.
 ///

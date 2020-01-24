@@ -5,14 +5,13 @@
 //!
 //! See [12.1 EPMD Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id103099)
 //! for more details about EPMD protocol.
+use crate::Creation;
 use futures::{self, BoxFuture, Future};
 use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
 use handy_async::pattern::combinators::BE;
 use handy_async::pattern::read::{All, LengthPrefixedBytes, Utf8, U16, U32, U8};
 use handy_async::pattern::{Endian, Pattern};
 use std::io::{Error, Read, Write};
-
-use Creation;
 
 /// The default listening port of the EPMD.
 pub const DEFAULT_EPMD_PORT: u16 = 4369;
