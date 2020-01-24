@@ -25,63 +25,63 @@ const TAG_ACK: u8 = 'a' as u8;
 
 bitflags! {
     /// Distribution flags.
-    pub flags DistributionFlags: u32 {
+    pub struct DistributionFlags: u32 {
         /// The node is to be published and part of the global namespace.
-        const DFLAG_PUBLISHED = 0x01,
+        const DFLAG_PUBLISHED = 0x01;
 
         /// The node implements an atom cache (obsolete).
-        const DFLAG_ATOM_CACHE = 0x02,
+        const DFLAG_ATOM_CACHE = 0x02;
 
         /// The node implements extended (3 × 32 bits) references (required).
         ///
         /// This is required today. If not present, the connection is refused.
-        const DFLAG_EXTENDED_REFERENCES = 0x04,
+        const DFLAG_EXTENDED_REFERENCES = 0x04;
 
         /// The node implements distributed process monitoring.
-        const DFLAG_DIST_MONITOR = 0x08,
+        const DFLAG_DIST_MONITOR = 0x08;
 
         /// The node uses separate tag for funs (lambdas) in the distribution protocol.
-        const DFLAG_FUN_TAGS = 0x10,
+        const DFLAG_FUN_TAGS = 0x10;
 
         /// The node implements distributed named process monitoring.
-        const DFLAG_DIST_MONITOR_NAME = 0x20,
+        const DFLAG_DIST_MONITOR_NAME = 0x20;
 
         /// The (hidden) node implements atom cache (obsolete).
-        const DFLAG_HIDDEN_ATOM_CACHE = 0x40,
+        const DFLAG_HIDDEN_ATOM_CACHE = 0x40;
 
         /// The node understands new fun tags.
-        const DFLAG_NEW_FUN_TAGS = 0x80,
+        const DFLAG_NEW_FUN_TAGS = 0x80;
 
         /// The node can handle extended pids and ports (required).
         ///
         /// This is required today. If not present, the connection is refused.
-        const DFLAG_EXTENDED_PIDS_PORTS = 0x100,
+        const DFLAG_EXTENDED_PIDS_PORTS = 0x100;
 
         /// This node understands `EXPORT_EXT` tag.
-        const DFLAG_EXPORT_PTR_TAG = 0x200,
+        const DFLAG_EXPORT_PTR_TAG = 0x200;
 
         /// The node understands bit binaries.
-        const DFLAG_BIT_BINARIES = 0x400,
+        const DFLAG_BIT_BINARIES = 0x400;
 
         /// The node understandss new float format.
-        const DFLAG_NEW_FLOATS = 0x800,
+        const DFLAG_NEW_FLOATS = 0x800;
 
         /// This node allows unicode characters in I/O operations.
-        const DFLAG_UNICODE_IO = 0x1000,
+        const DFLAG_UNICODE_IO = 0x1000;
 
         /// The node implements atom cache in distribution header.
         ///
         /// Note that currently `erl_dist` can not handle distribution headers.
-        const DFLAG_DIST_HDR_ATOM_CACHE = 0x2000,
+        const DFLAG_DIST_HDR_ATOM_CACHE = 0x2000;
 
         /// The node understands the `SMALL_ATOM_EXT` tag.
-        const DFLAG_SMALL_ATOM_TAGS = 0x4000,
+        const DFLAG_SMALL_ATOM_TAGS = 0x4000;
 
         /// The node understands UTF-8 encoded atoms.
-        const DFLAG_UTF8_ATOMS = 0x10000,
+        const DFLAG_UTF8_ATOMS = 0x10000;
 
         /// The node understands maps.
-        const DFLAG_MAP_TAGS = 0x20000,
+        const DFLAG_MAP_TAGS = 0x20000;
     }
 }
 impl Default for DistributionFlags {
@@ -97,16 +97,16 @@ impl Default for DistributionFlags {
     /// # ;
     /// ```
     fn default() -> Self {
-        DFLAG_EXTENDED_REFERENCES
-            | DFLAG_EXTENDED_PIDS_PORTS
-            | DFLAG_FUN_TAGS
-            | DFLAG_NEW_FUN_TAGS
-            | DFLAG_EXPORT_PTR_TAG
-            | DFLAG_BIT_BINARIES
-            | DFLAG_NEW_FLOATS
-            | DFLAG_SMALL_ATOM_TAGS
-            | DFLAG_UTF8_ATOMS
-            | DFLAG_MAP_TAGS
+        Self::DFLAG_EXTENDED_REFERENCES
+            | Self::DFLAG_EXTENDED_PIDS_PORTS
+            | Self::DFLAG_FUN_TAGS
+            | Self::DFLAG_NEW_FUN_TAGS
+            | Self::DFLAG_EXPORT_PTR_TAG
+            | Self::DFLAG_BIT_BINARIES
+            | Self::DFLAG_NEW_FLOATS
+            | Self::DFLAG_SMALL_ATOM_TAGS
+            | Self::DFLAG_UTF8_ATOMS
+            | Self::DFLAG_MAP_TAGS
     }
 }
 
