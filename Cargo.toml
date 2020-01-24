@@ -14,10 +14,10 @@ edition = "2018"
 travis-ci = {repository = "sile/erl_dist"}
 
 [dependencies]
-eetf = "0.3"
+eetf = "0.4"
 futures = "0.1"
 handy_async = "0.2"
-md5 = "0.3"
+md5 = "0.7"
 rand = "0.7"
 bitflags = "1"
 
