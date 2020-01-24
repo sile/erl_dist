@@ -28,13 +28,13 @@ macro_rules! invalid_data {
 }
 
 pub use epmd::EpmdClient;
-pub use message::Message;
 pub use handshake::Handshake;
+pub use message::Message;
 
-pub mod epmd;
 pub mod channel;
-pub mod message;
+pub mod epmd;
 pub mod handshake;
+pub mod message;
 
 /// The generation number of a distributed node.
 ///
@@ -45,7 +45,11 @@ pub mod handshake;
 pub struct Creation(u8);
 impl Creation {
     fn from_u16(c: u16) -> Option<Self> {
-        if c < 4 { Some(Creation(c as u8)) } else { None }
+        if c < 4 {
+            Some(Creation(c as u8))
+        } else {
+            None
+        }
     }
 
     /// Returns the inner counter value of this `Creation`.

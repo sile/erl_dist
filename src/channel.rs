@@ -1,10 +1,10 @@
 //! Channel implementation for sending/receiving messages between distributed Erlang nodes.
-use std::mem;
-use std::io::{Read, Write, Error};
-use futures::{Sink, StartSend, AsyncSink, Poll, Async, Future};
-use futures::{Stream, BoxFuture};
-use handy_async::io::AsyncWrite;
+use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend};
+use futures::{BoxFuture, Stream};
 use handy_async::io::futures::WriteAll;
+use handy_async::io::AsyncWrite;
+use std::io::{Error, Read, Write};
+use std::mem;
 
 use message::Message;
 
@@ -15,7 +15,8 @@ use message::Message;
 /// Before calling this function,
 /// the distribution handshake on `reader` must have been completed.
 pub fn receiver<R>(reader: R) -> Receiver<R>
-    where R: Read + Send + 'static
+where
+    R: Read + Send + 'static,
 {
     Receiver(recv_message(reader))
 }
@@ -27,11 +28,11 @@ pub fn receiver<R>(reader: R) -> Receiver<R>
 /// Before calling this function,
 /// the distribution handshake on `writer` must have been completed.
 pub fn sender<W>(writer: W) -> Sender<W>
-    where W: Write + Send + 'static
+where
+    W: Write + Send + 'static,
 {
     Sender(SenderInner::Idle(writer))
 }
-
 
 /// The receiver side of a channel.
 pub struct Receiver<R>(BoxFuture<(R, Message), Error>);
@@ -53,7 +54,8 @@ impl<R: Read + Send + 'static> Stream for Receiver<R> {
 #[derive(Debug)]
 pub struct Sender<W: Write>(SenderInner<W>);
 impl<W> Sink for Sender<W>
-    where W: Write
+where
+    W: Write,
 {
     type SinkItem = Message;
     type SinkError = Error;
@@ -106,8 +108,8 @@ enum SenderInner<W: Write> {
 
 fn recv_message<R: Read + Send + 'static>(reader: R) -> BoxFuture<(R, Message), Error> {
     use handy_async::io::ReadFrom;
-    use handy_async::pattern::{Pattern, Endian};
     use handy_async::pattern::read::U32;
+    use handy_async::pattern::{Endian, Pattern};
     U32.be()
         .and_then(|len| vec![0; len as usize])
         .and_then(|bytes| Message::read_from(&mut &bytes[..]))

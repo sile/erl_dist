@@ -13,38 +13,46 @@
 //! $ erl -sname foo
 //! > {bar, bar@localhost} ! hello.
 //! ```
+extern crate clap;
+extern crate eetf;
 extern crate erl_dist;
 extern crate fibers;
 extern crate futures;
-extern crate clap;
-extern crate eetf;
 
 use clap::{App, Arg};
-use fibers::{Executor, Spawn, InPlaceExecutor};
-use fibers::net::{TcpStream, TcpListener};
-use futures::{Future, Stream};
-use erl_dist::{EpmdClient, Handshake};
 use erl_dist::epmd::NodeInfo;
+use erl_dist::{EpmdClient, Handshake};
+use fibers::net::{TcpListener, TcpStream};
+use fibers::{Executor, InPlaceExecutor, Spawn};
+use futures::{Future, Stream};
 
 fn main() {
     let matches = App::new("recv_msg")
-        .arg(Arg::with_name("EPMD_HOST")
-                 .short("h")
-                 .takes_value(true)
-                 .default_value("127.0.0.1"))
-        .arg(Arg::with_name("EPMD_PORT")
-                 .short("p")
-                 .takes_value(true)
-                 .default_value("4369"))
-        .arg(Arg::with_name("COOKIE")
-                 .short("c")
-                 .long("cookie")
-                 .takes_value(true)
-                 .default_value("WPKYDIOSJIMJUURLRUHV"))
-        .arg(Arg::with_name("NODE_NAME")
-                 .long("name")
-                 .takes_value(true)
-                 .default_value("foo"))
+        .arg(
+            Arg::with_name("EPMD_HOST")
+                .short("h")
+                .takes_value(true)
+                .default_value("127.0.0.1"),
+        )
+        .arg(
+            Arg::with_name("EPMD_PORT")
+                .short("p")
+                .takes_value(true)
+                .default_value("4369"),
+        )
+        .arg(
+            Arg::with_name("COOKIE")
+                .short("c")
+                .long("cookie")
+                .takes_value(true)
+                .default_value("WPKYDIOSJIMJUURLRUHV"),
+        )
+        .arg(
+            Arg::with_name("NODE_NAME")
+                .long("name")
+                .takes_value(true)
+                .default_value("foo"),
+        )
         .get_matches();
     let node_name = matches.value_of("NODE_NAME").unwrap().to_string();
     let cookie = matches.value_of("COOKIE").unwrap().to_string();
@@ -57,55 +65,59 @@ fn main() {
     let mut executor = InPlaceExecutor::new().unwrap();
     let handle = executor.handle();
     let full_name = format!("{}@localhost", node_name);
-    let monitor = executor.spawn_monitor(TcpListener::bind("0.0.0.0:0".parse().unwrap())
-                                             .and_then(move |listener| {
-        // Registers the node name and the listening port to the EPMD
-        let listen_addr = listener.local_addr().unwrap();
-        println!("# Listen: {:?}", listen_addr);
-        let info = NodeInfo::new(&node_name, listen_addr.port());
-        TcpStream::connect(epmd_addr).and_then(move |socket| {
-                                                   EpmdClient::new()
-                                                       .register(socket, info)
-                                                       .map(|alive| (listener, alive))
-                                               })
-    })
-                                             .and_then(move |(listener, alive)| {
-        let creation = alive.1.clone();
-        println!("# Creation: {:?}", creation);
-        listener
-            .incoming()
-            .for_each(move |(peer, addr)| {
-                // New peer is TCP connected
-                // Executes the sever side handshake
-                println!("# Peer Addr: {:?}", addr);
-                let handshake = Handshake::new(&full_name, &cookie);
-                handle.spawn(peer.and_then(move |peer| {
-                        handshake
-                            .accept(peer)
-                            .map(|peer| {
-                                     println!("# Peer Name: {}", peer.name);
-                                     println!("# Peer Flags: {:?}", peer.flags);
-                                     erl_dist::channel::receiver(peer.stream)
-                                 })
-                            .and_then(|rx| {
-                                          // Prints received messages
-                                          rx.for_each(|msg| {
-                                                          println!("# Recv: {:?}", msg);
-                                                          Ok(())
-                                                      })
-                                      })
-                    })
-                                 .then(|r| {
-                                           println!("# Disconnected: {:?}", r);
-                                           Ok(())
-                                       }));
-                Ok(())
+    let monitor = executor.spawn_monitor(
+        TcpListener::bind("0.0.0.0:0".parse().unwrap())
+            .and_then(move |listener| {
+                // Registers the node name and the listening port to the EPMD
+                let listen_addr = listener.local_addr().unwrap();
+                println!("# Listen: {:?}", listen_addr);
+                let info = NodeInfo::new(&node_name, listen_addr.port());
+                TcpStream::connect(epmd_addr).and_then(move |socket| {
+                    EpmdClient::new()
+                        .register(socket, info)
+                        .map(|alive| (listener, alive))
+                })
             })
-            .then(move |r| {
-                      // NOTE: The connection to the EPMD must be kept during the node alive.
-                      let _ = alive;
-                      r
-                  })
-    }));
+            .and_then(move |(listener, alive)| {
+                let creation = alive.1.clone();
+                println!("# Creation: {:?}", creation);
+                listener
+                    .incoming()
+                    .for_each(move |(peer, addr)| {
+                        // New peer is TCP connected
+                        // Executes the sever side handshake
+                        println!("# Peer Addr: {:?}", addr);
+                        let handshake = Handshake::new(&full_name, &cookie);
+                        handle.spawn(
+                            peer.and_then(move |peer| {
+                                handshake
+                                    .accept(peer)
+                                    .map(|peer| {
+                                        println!("# Peer Name: {}", peer.name);
+                                        println!("# Peer Flags: {:?}", peer.flags);
+                                        erl_dist::channel::receiver(peer.stream)
+                                    })
+                                    .and_then(|rx| {
+                                        // Prints received messages
+                                        rx.for_each(|msg| {
+                                            println!("# Recv: {:?}", msg);
+                                            Ok(())
+                                        })
+                                    })
+                            })
+                            .then(|r| {
+                                println!("# Disconnected: {:?}", r);
+                                Ok(())
+                            }),
+                        );
+                        Ok(())
+                    })
+                    .then(move |r| {
+                        // NOTE: The connection to the EPMD must be kept during the node alive.
+                        let _ = alive;
+                        r
+                    })
+            }),
+    );
     let _ = executor.run_fiber(monitor).unwrap().expect("Failed");
 }
