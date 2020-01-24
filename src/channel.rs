@@ -1,7 +1,6 @@
 //! Channel implementation for sending/receiving messages between distributed Erlang nodes.
 use crate::message::Message;
-use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend};
-use futures::{BoxFuture, Stream};
+use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend, Stream};
 use handy_async::io::futures::WriteAll;
 use handy_async::io::AsyncWrite;
 use std::io::{Error, Read, Write};
@@ -17,7 +16,7 @@ pub fn receiver<R>(reader: R) -> Receiver<R>
 where
     R: Read + Send + 'static,
 {
-    Receiver(recv_message(reader))
+    Receiver(Box::new(recv_message(reader)))
 }
 
 /// Creates the sender side of a channel to communicate with the node connected by `writer`.
@@ -34,14 +33,14 @@ where
 }
 
 /// The receiver side of a channel.
-pub struct Receiver<R>(BoxFuture<(R, Message), Error>);
+pub struct Receiver<R>(Box<dyn 'static + Future<Item = (R, Message), Error = Error> + Send>);
 impl<R: Read + Send + 'static> Stream for Receiver<R> {
     type Item = Message;
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         match self.0.poll()? {
             Async::Ready((r, m)) => {
-                self.0 = recv_message(r);
+                self.0 = Box::new(recv_message(r));
                 Ok(Async::Ready(Some(m)))
             }
             Async::NotReady => Ok(Async::NotReady),
@@ -105,7 +104,9 @@ enum SenderInner<W: Write> {
     None,
 }
 
-fn recv_message<R: Read + Send + 'static>(reader: R) -> BoxFuture<(R, Message), Error> {
+fn recv_message<R: Read + Send + 'static>(
+    reader: R,
+) -> impl 'static + Future<Item = (R, Message), Error = Error> + Send {
     use handy_async::io::ReadFrom;
     use handy_async::pattern::read::U32;
     use handy_async::pattern::{Endian, Pattern};
@@ -114,5 +115,4 @@ fn recv_message<R: Read + Send + 'static>(reader: R) -> BoxFuture<(R, Message), 
         .and_then(|bytes| Message::read_from(&mut &bytes[..]))
         .read_from(reader)
         .map_err(|e| e.into_error())
-        .boxed()
 }

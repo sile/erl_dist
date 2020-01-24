@@ -6,7 +6,7 @@
 //! See [12.1 EPMD Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id103099)
 //! for more details about EPMD protocol.
 use crate::Creation;
-use futures::{self, BoxFuture, Future};
+use futures::{self, Future};
 use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
 use handy_async::pattern::combinators::BE;
 use handy_async::pattern::read::{All, LengthPrefixedBytes, Utf8, U16, U32, U8};
@@ -80,7 +80,11 @@ impl EpmdClient {
     ///
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-    pub fn register<S>(&self, stream: S, node: NodeInfo) -> BoxFuture<(S, Creation), Error>
+    pub fn register<S>(
+        &self,
+        stream: S,
+        node: NodeInfo,
+    ) -> impl 'static + Future<Item = (S, Creation), Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -111,7 +115,6 @@ impl EpmdClient {
             })
             .map(|(stream, (_, _, creation))| (stream, creation))
             .map_err(|e| e.into_error())
-            .boxed()
     }
 
     /// Queries the distribution port (and other information) of
@@ -123,7 +126,11 @@ impl EpmdClient {
     ///
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-    pub fn get_node_info<S>(&self, stream: S, node_name: &str) -> BoxFuture<Option<NodeInfo>, Error>
+    pub fn get_node_info<S>(
+        &self,
+        stream: S,
+        node_name: &str,
+    ) -> impl 'static + Future<Item = Option<NodeInfo>, Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -160,7 +167,6 @@ impl EpmdClient {
             })
             .map(|(_, info)| info)
             .map_err(|e| e.into_error())
-            .boxed()
     }
 
     /// Kills the EPMD connected by `stream`.
@@ -174,7 +180,7 @@ impl EpmdClient {
     ///
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-    pub fn kill<S>(&self, stream: S) -> BoxFuture<String, Error>
+    pub fn kill<S>(&self, stream: S) -> impl 'static + Future<Item = String, Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -183,7 +189,6 @@ impl EpmdClient {
             .and_then(|(stream, _)| Utf8(All).read_from(stream))
             .map(|(_, v)| v)
             .map_err(|e| e.into_error())
-            .boxed()
     }
 
     /// Gets all registered names from the EPMD connected by `stream`.
@@ -195,7 +200,10 @@ impl EpmdClient {
     ///
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-    pub fn get_names<S>(&self, stream: S) -> BoxFuture<String, Error>
+    pub fn get_names<S>(
+        &self,
+        stream: S,
+    ) -> impl 'static + Future<Item = String, Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -204,7 +212,6 @@ impl EpmdClient {
             .and_then(|(stream, _)| (U32.be(), Utf8(All)).read_from(stream))
             .map(|(_, (_, names))| names)
             .map_err(|e| e.into_error())
-            .boxed()
     }
 
     /// Dumps all data from the EPMD connected by `stream`.
@@ -229,7 +236,7 @@ impl EpmdClient {
     ///
     /// For executing asynchronously, we assume that `stream` returns
     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-    pub fn dump<S>(&self, stream: S) -> BoxFuture<String, Error>
+    pub fn dump<S>(&self, stream: S) -> impl 'static + Future<Item = String, Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -238,7 +245,6 @@ impl EpmdClient {
             .and_then(|(stream, _)| (U32.be(), Utf8(All)).read_from(stream))
             .map(|(_, (_, dump))| dump)
             .map_err(|e| e.into_error())
-            .boxed()
     }
 }
 

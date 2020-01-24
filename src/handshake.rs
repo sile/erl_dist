@@ -5,7 +5,7 @@
 //! See [12.2 Distribution Handshake]
 //! (http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id104553)
 //! for more details about distribution handshake.
-use futures::{self, BoxFuture, Future};
+use futures::{self, Future};
 use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
 use handy_async::pattern::combinators::BE;
 use handy_async::pattern::read::{Utf8, U16, U32, U8};
@@ -90,10 +90,12 @@ impl Default for DistributionFlags {
     /// This is equivalent to the following code:
     ///
     /// ```no_run
-    /// # use erl_dist::handshake::*;
-    /// DFLAG_EXTENDED_REFERENCES | DFLAG_EXTENDED_PIDS_PORTS | DFLAG_FUN_TAGS |
-    /// DFLAG_NEW_FUN_TAGS | DFLAG_EXPORT_PTR_TAG | DFLAG_BIT_BINARIES | DFLAG_NEW_FLOATS |
-    /// DFLAG_SMALL_ATOM_TAGS | DFLAG_UTF8_ATOMS | DFLAG_MAP_TAGS
+    /// # use erl_dist::handshake::DistributionFlags;
+    /// DistributionFlags::DFLAG_EXTENDED_REFERENCES | DistributionFlags::DFLAG_EXTENDED_PIDS_PORTS |
+    /// DistributionFlags::DFLAG_FUN_TAGS | DistributionFlags::DFLAG_NEW_FUN_TAGS |
+    /// DistributionFlags::DFLAG_EXPORT_PTR_TAG | DistributionFlags::DFLAG_BIT_BINARIES |
+    /// DistributionFlags::DFLAG_NEW_FLOATS | DistributionFlags::DFLAG_SMALL_ATOM_TAGS |
+    /// DistributionFlags::DFLAG_UTF8_ATOMS | DistributionFlags::DFLAG_MAP_TAGS
     /// # ;
     /// ```
     fn default() -> Self {
@@ -221,7 +223,7 @@ impl Handshake {
     ///
     /// See the files in the ["example" directory]
     /// (https://github.com/sile/erl_dist/tree/master/examples) for more examples.
-    pub fn connect<S>(&self, peer: S) -> BoxFuture<Peer<S>, Error>
+    pub fn connect<S>(&self, peer: S) -> impl 'static + Future<Item = Peer<S>, Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -292,7 +294,6 @@ impl Handshake {
             })
             .map(|(peer, _)| peer)
             .map_err(|e| e.into_error())
-            .boxed()
     }
 
     /// Executes the server side handshake to accept the node connected by the `peer` stream.
@@ -338,7 +339,7 @@ impl Handshake {
     /// See the [recv_msg.rs]
     /// (https://github.com/sile/erl_dist/tree/master/examples/recv_msg.rs)
     /// file for a running example.
-    pub fn accept<S>(&self, peer: S) -> BoxFuture<Peer<S>, Error>
+    pub fn accept<S>(&self, peer: S) -> impl 'static + Future<Item = Peer<S>, Error = Error> + Send
     where
         S: Read + Write + Send + 'static,
     {
@@ -411,7 +412,6 @@ impl Handshake {
             })
             .map(|(peer, _)| peer)
             .map_err(|e| e.into_error())
-            .boxed()
     }
 }
 
