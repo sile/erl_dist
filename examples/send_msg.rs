@@ -8,7 +8,7 @@
 //! $ cargo run --example send_msg -- --help
 //! $ cargo run --example send_msg -- --peer foo --destination foo --cookie erlang_cookie -m hello
 //! ```
-use clap::{App, Arg};
+use clap::Parser;
 use erl_dist::channel;
 use erl_dist::{EpmdClient, Handshake, Message};
 use fibers::net::TcpStream;
@@ -18,63 +18,43 @@ use futures::{Future, Sink};
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
+#[derive(Debug, Parser)]
+#[clap(name = "send_msg")]
+struct Args {
+    #[clap(long, short = 'h', default_value = "127.0.0.1")]
+    epmd_host: String,
+
+    #[clap(long, short = 'p', default_value_t = 4369)]
+    epmd_port: u16,
+
+    #[clap(long = "peer", default_value = "foo")]
+    peer_name: String,
+
+    #[clap(long, default_value = "WPKYDIOSJIMJUURLRUHV")]
+    cookie: String,
+
+    #[clap(long = "self", default_value = "bar@localhost")]
+    self_node: String,
+
+    #[clap(long, short, default_value = "foo")]
+    destination: String,
+
+    #[clap(long, short, default_value = "hello_world")]
+    message: String,
+}
+
 fn main() {
-    let matches = App::new("send_msg")
-        .arg(
-            Arg::with_name("EPMD_HOST")
-                .short("h")
-                .takes_value(true)
-                .default_value("127.0.0.1"),
-        )
-        .arg(
-            Arg::with_name("EPMD_PORT")
-                .short("p")
-                .takes_value(true)
-                .default_value("4369"),
-        )
-        .arg(
-            Arg::with_name("PEER_NAME")
-                .long("peer")
-                .takes_value(true)
-                .default_value("foo"),
-        )
-        .arg(
-            Arg::with_name("COOKIE")
-                .long("cookie")
-                .takes_value(true)
-                .default_value("WPKYDIOSJIMJUURLRUHV"),
-        )
-        .arg(
-            Arg::with_name("SELF_NODE")
-                .long("self")
-                .takes_value(true)
-                .default_value("bar@localhost"),
-        )
-        .arg(
-            Arg::with_name("DESTINATION")
-                .short("d")
-                .long("destination")
-                .takes_value(true)
-                .default_value("foo"),
-        )
-        .arg(
-            Arg::with_name("MESSAGE")
-                .short("m")
-                .long("message")
-                .takes_value(true)
-                .default_value("hello_world"),
-        )
-        .get_matches();
-    let peer_name = matches.value_of("PEER_NAME").unwrap().to_string();
-    let self_node = matches.value_of("SELF_NODE").unwrap().to_string();
-    let cookie = matches.value_of("COOKIE").unwrap().to_string();
-    let epmd_host = matches.value_of("EPMD_HOST").unwrap();
-    let epmd_port = matches.value_of("EPMD_PORT").unwrap();
+    let args = Args::parse();
+    let peer_name = args.peer_name;
+    let self_node = args.self_node;
+    let cookie = args.cookie;
+    let epmd_host = args.epmd_host;
+    let epmd_port = args.epmd_port;
     let epmd_addr: SocketAddr = format!("{}:{}", epmd_host, epmd_port)
         .parse()
         .expect("Invalid epmd address");
-    let dest_proc = matches.value_of("DESTINATION").unwrap().to_string();
-    let message = matches.value_of("MESSAGE").unwrap().to_string();
+    let dest_proc = args.destination;
+    let message = args.message;
 
     let self_node0 = self_node.to_string();
     let mut executor = InPlaceExecutor::new().unwrap();

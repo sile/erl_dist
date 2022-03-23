@@ -13,45 +13,35 @@
 //! $ erl -sname foo
 //! > {bar, bar@localhost} ! hello.
 //! ```
-use clap::{App, Arg};
+use clap::Parser;
 use erl_dist::epmd::NodeInfo;
 use erl_dist::{EpmdClient, Handshake};
 use fibers::net::{TcpListener, TcpStream};
 use fibers::{Executor, InPlaceExecutor, Spawn};
 use futures::{Future, Stream};
 
+#[derive(Debug, Parser)]
+#[clap(name = "recv_msg")]
+struct Args {
+    #[clap(long, short = 'h', default_value = "127.0.0.1")]
+    epmd_host: String,
+
+    #[clap(long, short = 'p', default_value_t = 4369)]
+    epmd_port: u16,
+
+    #[clap(long, default_value = "WPKYDIOSJIMJUURLRUHV")]
+    cookie: String,
+
+    #[clap(long = "name", default_value = "foo")]
+    node_name: String,
+}
+
 fn main() {
-    let matches = App::new("recv_msg")
-        .arg(
-            Arg::with_name("EPMD_HOST")
-                .short("h")
-                .takes_value(true)
-                .default_value("127.0.0.1"),
-        )
-        .arg(
-            Arg::with_name("EPMD_PORT")
-                .short("p")
-                .takes_value(true)
-                .default_value("4369"),
-        )
-        .arg(
-            Arg::with_name("COOKIE")
-                .short("c")
-                .long("cookie")
-                .takes_value(true)
-                .default_value("WPKYDIOSJIMJUURLRUHV"),
-        )
-        .arg(
-            Arg::with_name("NODE_NAME")
-                .long("name")
-                .takes_value(true)
-                .default_value("foo"),
-        )
-        .get_matches();
-    let node_name = matches.value_of("NODE_NAME").unwrap().to_string();
-    let cookie = matches.value_of("COOKIE").unwrap().to_string();
-    let epmd_host = matches.value_of("EPMD_HOST").unwrap();
-    let epmd_port = matches.value_of("EPMD_PORT").unwrap();
+    let args = Args::parse();
+    let node_name = args.node_name;
+    let cookie = args.cookie;
+    let epmd_host = args.epmd_host;
+    let epmd_port = args.epmd_port;
     let epmd_addr = format!("{}:{}", epmd_host, epmd_port)
         .parse()
         .expect("Invalid epmd address");

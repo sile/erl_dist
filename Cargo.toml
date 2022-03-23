@@ -22,5 +22,5 @@ rand = "0.8"
 bitflags = "1"
 
 [dev-dependencies]
-clap = "2"
+clap = { version = "3", features = ["derive"] }
 fibers = "0.1"
