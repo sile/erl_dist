@@ -33,9 +33,6 @@ const TAG_ALIVE2_RESP: u8 = 121;
 /// Queries the information of the "foo" node:
 ///
 /// ```no_run
-/// # extern crate erl_dist;
-/// # extern crate fibers;
-/// # extern crate futures;
 /// use fibers::{Executor, InPlaceExecutor, Spawn};
 /// use fibers::net::TcpStream;
 /// use futures::Future;

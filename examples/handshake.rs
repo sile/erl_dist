@@ -6,11 +6,6 @@
 //! $ cargo run --example handshake -- --help
 //! $ cargo run --example handshake -- --peer foo --self bar@localhost --cookie erlang_cookie
 //! ```
-extern crate clap;
-extern crate erl_dist;
-extern crate fibers;
-extern crate futures;
-
 use clap::{App, Arg};
 use erl_dist::{EpmdClient, Handshake};
 use fibers::net::TcpStream;

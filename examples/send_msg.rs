@@ -8,12 +8,6 @@
 //! $ cargo run --example send_msg -- --help
 //! $ cargo run --example send_msg -- --peer foo --destination foo --cookie erlang_cookie -m hello
 //! ```
-extern crate clap;
-extern crate eetf;
-extern crate erl_dist;
-extern crate fibers;
-extern crate futures;
-
 use clap::{App, Arg};
 use erl_dist::channel;
 use erl_dist::{EpmdClient, Handshake, Message};

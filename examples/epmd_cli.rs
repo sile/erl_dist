@@ -7,11 +7,6 @@
 //! $ cargo run --example epmd_cli names
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
-extern crate clap;
-extern crate erl_dist;
-extern crate fibers;
-extern crate futures;
-
 use clap::{App, Arg, SubCommand};
 use erl_dist::epmd::NodeInfo;
 use erl_dist::EpmdClient;

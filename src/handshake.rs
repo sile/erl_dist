@@ -196,9 +196,6 @@ impl Handshake {
     /// Connects to the "foo" node running on localhost at port `4000`:
     ///
     /// ```no_run
-    /// # extern crate erl_dist;
-    /// # extern crate futures;
-    /// # extern crate fibers;
     /// use fibers::{Executor, InPlaceExecutor, Spawn};
     /// use fibers::net::TcpStream;
     /// use futures::Future;
@@ -306,9 +303,6 @@ impl Handshake {
     /// # Examples
     ///
     /// ```no_run
-    /// # extern crate erl_dist;
-    /// # extern crate futures;
-    /// # extern crate fibers;
     /// use fibers::net::TcpListener;
     /// use fibers::{Executor, InPlaceExecutor, Spawn};
     /// use futures::{Future, Stream};

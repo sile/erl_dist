@@ -13,12 +13,6 @@
 //! $ erl -sname foo
 //! > {bar, bar@localhost} ! hello.
 //! ```
-extern crate clap;
-extern crate eetf;
-extern crate erl_dist;
-extern crate fibers;
-extern crate futures;
-
 use clap::{App, Arg};
 use erl_dist::epmd::NodeInfo;
 use erl_dist::{EpmdClient, Handshake};

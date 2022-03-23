@@ -12,11 +12,6 @@
 //!                        (https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
 #![warn(missing_docs)]
 
-extern crate eetf;
-extern crate futures;
-extern crate handy_async;
-extern crate md5;
-extern crate rand;
 #[macro_use]
 extern crate bitflags;
 
