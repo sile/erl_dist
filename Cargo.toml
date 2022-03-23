@@ -8,7 +8,7 @@ repository = "https://github.com/sile/erl_dist"
 readme = "README.md"
 keywords = ["erlang"]
 license = "MIT"
-edition = "2018"
+edition = "2021"
 
 [badges]
 travis-ci = {repository = "sile/erl_dist"}
