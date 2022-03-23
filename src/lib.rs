@@ -23,7 +23,7 @@ extern crate bitflags;
 macro_rules! invalid_data {
     ($fmt:expr) => { invalid_data!($fmt,); };
     ($fmt:expr, $($arg:tt)*) => {
-        ::std::io::Error::new(::std::io::ErrorKind::InvalidData, format!($fmt, $($arg)*));
+        ::std::io::Error::new(::std::io::ErrorKind::InvalidData, format!($fmt, $($arg)*))
     };
 }
 

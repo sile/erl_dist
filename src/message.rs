@@ -4,8 +4,9 @@
 //! (http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id105440).
 //!
 //! Note that distribution headers are not supported in the current version.
-use eetf::convert::{TryAsRef, TryInto};
+use eetf::convert::TryAsRef;
 use eetf::{Atom, FixInteger, Pid, Reference, Term, Tuple};
+use std::convert::TryInto;
 use std::io::{self, Error, ErrorKind, Read, Write};
 
 const CTRL_TYPE_LINK: u8 = 1;
@@ -65,7 +66,7 @@ impl Message {
                 buf[0]
             ))
         } else {
-            let ctrl: Tuple = read_term(reader)?;
+            let ctrl: Tuple = read_maybe_term(reader)?;
             let tag = {
                 let tag: &FixInteger = ctrl.elements[0].try_as_ref().unwrap();
                 tag.value as u8
@@ -781,9 +782,20 @@ where
     })
 }
 
-fn read_term<R: Read, T>(reader: &mut R) -> io::Result<T>
+fn read_term<R: Read>(reader: &mut R) -> io::Result<Term> {
+    use eetf::DecodeError;
+    Term::decode(reader).map_err(|e| {
+        if let DecodeError::Io(e) = e {
+            e
+        } else {
+            Error::new(ErrorKind::InvalidData, Box::new(e))
+        }
+    })
+}
+
+fn read_maybe_term<R: Read, T>(reader: &mut R) -> io::Result<T>
 where
-    Term: TryInto<T>,
+    Term: TryInto<T, Error = Term>,
 {
     use eetf::DecodeError;
     Term::decode(reader)
