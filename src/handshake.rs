@@ -17,11 +17,11 @@ use std::io::{Error, ErrorKind, Read, Result, Write};
 /// The distribution version this crate can handle.
 pub const DISTRIBUTION_VERSION: u16 = 5;
 
-const TAG_NAME: u8 = 'n' as u8;
-const TAG_STATUS: u8 = 's' as u8;
-const TAG_CHALLENGE: u8 = 'n' as u8;
-const TAG_REPLY: u8 = 'r' as u8;
-const TAG_ACK: u8 = 'a' as u8;
+const TAG_NAME: u8 = b'n';
+const TAG_STATUS: u8 = b's';
+const TAG_CHALLENGE: u8 = b'n';
+const TAG_REPLY: u8 = b'r';
+const TAG_ACK: u8 = b'a';
 
 bitflags! {
     /// Distribution flags.
@@ -196,9 +196,6 @@ impl Handshake {
     /// Connects to the "foo" node running on localhost at port `4000`:
     ///
     /// ```no_run
-    /// # extern crate erl_dist;
-    /// # extern crate futures;
-    /// # extern crate fibers;
     /// use fibers::{Executor, InPlaceExecutor, Spawn};
     /// use fibers::net::TcpStream;
     /// use futures::Future;
@@ -306,9 +303,6 @@ impl Handshake {
     /// # Examples
     ///
     /// ```no_run
-    /// # extern crate erl_dist;
-    /// # extern crate futures;
-    /// # extern crate fibers;
     /// use fibers::net::TcpListener;
     /// use fibers::{Executor, InPlaceExecutor, Spawn};
     /// use futures::{Future, Stream};

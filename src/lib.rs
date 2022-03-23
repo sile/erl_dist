@@ -12,18 +12,13 @@
 //!                        (https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
 #![warn(missing_docs)]
 
-extern crate eetf;
-extern crate futures;
-extern crate handy_async;
-extern crate md5;
-extern crate rand;
 #[macro_use]
 extern crate bitflags;
 
 macro_rules! invalid_data {
     ($fmt:expr) => { invalid_data!($fmt,); };
     ($fmt:expr, $($arg:tt)*) => {
-        ::std::io::Error::new(::std::io::ErrorKind::InvalidData, format!($fmt, $($arg)*));
+        ::std::io::Error::new(::std::io::ErrorKind::InvalidData, format!($fmt, $($arg)*))
     };
 }
 
