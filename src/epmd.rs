@@ -62,6 +62,13 @@ const TAG_ALIVE2_RESP: u8 = 121;
 pub struct EpmdClient {
     _dummy: (),
 }
+
+impl Default for EpmdClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EpmdClient {
     /// Makes a new `EpmdClient` instance.
     pub fn new() -> Self {
@@ -296,7 +303,7 @@ impl NodeInfo {
     pub fn new(name: &str, port: u16) -> Self {
         NodeInfo {
             name: name.to_string(),
-            port: port,
+            port,
             node_type: NodeType::Normal,
             protocol: Protocol::TcpIpV4,
             highest_version: 5,

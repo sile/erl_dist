@@ -128,10 +128,7 @@ impl Message {
 
     /// Makes a new `Link` message.
     pub fn link(from_pid: Pid, to_pid: Pid) -> Self {
-        Message::from(Link {
-            from_pid: from_pid,
-            to_pid: to_pid,
-        })
+        Message::from(Link { from_pid, to_pid })
     }
 
     /// Makes a new `Send` message.
@@ -140,7 +137,7 @@ impl Message {
         Term: From<T>,
     {
         Message::from(Send {
-            to_pid: to_pid,
+            to_pid,
             message: Term::from(message),
         })
     }
@@ -151,18 +148,15 @@ impl Message {
         Term: From<T>,
     {
         Message::from(Exit {
-            from_pid: from_pid,
-            to_pid: to_pid,
+            from_pid,
+            to_pid,
             reason: Term::from(reason),
         })
     }
 
     /// Makes a new `Unlink` message.
     pub fn unlink(from_pid: Pid, to_pid: Pid) -> Self {
-        Message::from(Unlink {
-            from_pid: from_pid,
-            to_pid: to_pid,
-        })
+        Message::from(Unlink { from_pid, to_pid })
     }
 
     /// Makes a new `NodeLink` message.
@@ -177,7 +171,7 @@ impl Message {
         Term: From<T>,
     {
         Message::from(RegSend {
-            from_pid: from_pid,
+            from_pid,
             to_name: Atom::from(to_name),
             message: Term::from(message),
         })
@@ -185,10 +179,7 @@ impl Message {
 
     /// Makes a new `GroupLeader` message.
     pub fn group_leader(from_pid: Pid, to_pid: Pid) -> Self {
-        Message::from(GroupLeader {
-            from_pid: from_pid,
-            to_pid: to_pid,
-        })
+        Message::from(GroupLeader { from_pid, to_pid })
     }
 
     /// Makes a new `Exit2` message.
@@ -197,8 +188,8 @@ impl Message {
         Term: From<T>,
     {
         Message::from(Exit2 {
-            from_pid: from_pid,
-            to_pid: to_pid,
+            from_pid,
+            to_pid,
             reason: Term::from(reason),
         })
     }
@@ -210,7 +201,7 @@ impl Message {
         Term: From<U>,
     {
         Message::from(SendTt {
-            to_pid: to_pid,
+            to_pid,
             trace_token: Term::from(trace_token),
             message: Term::from(message),
         })
@@ -223,8 +214,8 @@ impl Message {
         Term: From<U>,
     {
         Message::from(ExitTt {
-            from_pid: from_pid,
-            to_pid: to_pid,
+            from_pid,
+            to_pid,
             trace_token: Term::from(trace_token),
             reason: Term::from(reason),
         })
@@ -238,7 +229,7 @@ impl Message {
         Term: From<U>,
     {
         Message::from(RegSendTt {
-            from_pid: from_pid,
+            from_pid,
             to_name: Atom::from(to_name),
             trace_token: Term::from(trace_token),
             message: Term::from(message),
@@ -252,8 +243,8 @@ impl Message {
         Term: From<U>,
     {
         Message::from(Exit2Tt {
-            from_pid: from_pid,
-            to_pid: to_pid,
+            from_pid,
+            to_pid,
             trace_token: Term::from(trace_token),
             reason: Term::from(reason),
         })
@@ -265,9 +256,9 @@ impl Message {
         ProcessRef: From<T>,
     {
         Message::from(MonitorP {
-            from_pid: from_pid,
+            from_pid,
             to_proc: From::from(to_proc),
-            reference: reference,
+            reference,
         })
     }
 
@@ -277,9 +268,9 @@ impl Message {
         ProcessRef: From<T>,
     {
         Message::from(DemonitorP {
-            from_pid: from_pid,
+            from_pid,
             to_proc: From::from(to_proc),
-            reference: reference,
+            reference,
         })
     }
 
@@ -289,9 +280,9 @@ impl Message {
         Term: From<T>,
     {
         Message::from(MonitorPExit {
-            from_pid: from_pid,
-            to_pid: to_pid,
-            reference: reference,
+            from_pid,
+            to_pid,
+            reference,
             reason: Term::from(reason),
         })
     }
@@ -361,7 +352,7 @@ impl Send {
         let message = read_term(reader)?;
         Ok(Send {
             to_pid: to_pid.clone(),
-            message: message,
+            message,
         })
     }
 }
@@ -385,7 +376,7 @@ impl Exit {
         Ok(Exit {
             from_pid: from_pid.clone(),
             to_pid: to_pid.clone(),
-            reason: reason,
+            reason,
         })
     }
 }
@@ -450,7 +441,7 @@ impl RegSend {
         Ok(RegSend {
             from_pid: from_pid.clone(),
             to_name: to_name.clone(),
-            message: message,
+            message,
         })
     }
 }
@@ -495,7 +486,7 @@ impl Exit2 {
         Ok(Exit2 {
             from_pid: from_pid.clone(),
             to_pid: to_pid.clone(),
-            reason: reason,
+            reason,
         })
     }
 }
@@ -525,8 +516,8 @@ impl SendTt {
         let message = read_term(reader)?;
         Ok(SendTt {
             to_pid: to_pid.clone(),
-            trace_token: trace_token,
-            message: message,
+            trace_token,
+            message,
         })
     }
 }
@@ -558,8 +549,8 @@ impl ExitTt {
         Ok(ExitTt {
             from_pid: from_pid.clone(),
             to_pid: to_pid.clone(),
-            trace_token: trace_token,
-            reason: reason,
+            trace_token,
+            reason,
         })
     }
 }
@@ -593,8 +584,8 @@ impl RegSendTt {
         Ok(RegSendTt {
             from_pid: from_pid.clone(),
             to_name: to_name.clone(),
-            trace_token: trace_token,
-            message: message,
+            trace_token,
+            message,
         })
     }
 }
@@ -626,8 +617,8 @@ impl Exit2Tt {
         Ok(Exit2Tt {
             from_pid: from_pid.clone(),
             to_pid: to_pid.clone(),
-            trace_token: trace_token,
-            reason: reason,
+            trace_token,
+            reason,
         })
     }
 }
@@ -661,7 +652,7 @@ impl MonitorP {
         let reference: &Reference = ctrl.elements[3].try_as_ref().unwrap();
         Ok(MonitorP {
             from_pid: from_pid.clone(),
-            to_proc: to_proc,
+            to_proc,
             reference: reference.clone(),
         })
     }
@@ -696,7 +687,7 @@ impl DemonitorP {
         let reference: &Reference = ctrl.elements[3].try_as_ref().unwrap();
         Ok(DemonitorP {
             from_pid: from_pid.clone(),
-            to_proc: to_proc,
+            to_proc,
             reference: reference.clone(),
         })
     }
@@ -730,7 +721,7 @@ impl MonitorPExit {
             from_pid: from_pid.clone(),
             to_pid: to_pid.clone(),
             reference: reference.clone(),
-            reason: reason,
+            reason,
         })
     }
 }
