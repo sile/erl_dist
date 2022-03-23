@@ -10,9 +10,6 @@ keywords = ["erlang"]
 license = "MIT"
 edition = "2021"
 
-[badges]
-travis-ci = {repository = "sile/erl_dist"}
-
 [dependencies]
 eetf = "0.7"
 futures = "0.1"
