@@ -16,7 +16,7 @@ struct Args {
     #[clap(long, short = 'h', default_value = "127.0.0.1")]
     epmd_host: String,
 
-    #[clap(long, short = 'p', default_value_t = 4369)]
+    #[clap(long, short = 'p', default_value_t = erl_dist::epmd::DEFAULT_EPMD_PORT)]
     epmd_port: u16,
 
     #[clap(subcommand)]
@@ -28,7 +28,7 @@ enum Command {
     Names,
     Dump,
     NodeInfo { node: String },
-    // Kill,
+    Kill,
     // Register {
     //     name: String,
     //     port: u16,
@@ -74,20 +74,15 @@ fn main() -> anyhow::Result<()> {
             }
             Command::Dump => {
                 // 'DUMP_REQ'
-                let info = client.dump().await?;
-                println!("{}", info);
-            } // Command::Kill => {
-              //     // 'KILL_REQ'
-              //     //
-              //     let monitor =
-              //         executor.spawn_monitor(connect.and_then(move |socket| client.kill(socket)));
-              //     let result = executor
-              //         .run_fiber(monitor)
-              //         .unwrap()
-              //         .expect("'kill' request failed");
-              //     println!("KILLED: {:?}", result);
-              // }
-              // Command::Register { name, port, hidden } => {
+                let result = client.dump().await?;
+                println!("{}", result);
+            }
+            Command::Kill => {
+                // 'KILL_REQ'
+                let result = client.kill().await?;
+                let result = serde_json::json!({ "result": result });
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } // Command::Register { name, port, hidden } => {
               //     // 'ALIVE2_REQ'
               //     //
               //     let mut node = NodeInfo::new(&name, port);

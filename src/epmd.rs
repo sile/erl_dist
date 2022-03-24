@@ -9,6 +9,9 @@ use byteorder::{BigEndian, ByteOrder as _};
 use futures::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use std::str::FromStr;
 
+/// The default listening port of the EPMD.
+pub const DEFAULT_EPMD_PORT: u16 = 4369;
+
 #[derive(Debug)]
 pub struct Socket<T> {
     inner: T,
@@ -81,6 +84,7 @@ where
     }
 }
 
+const TAG_KILL_REQ: u8 = 107;
 const TAG_DUMP_REQ: u8 = 100;
 const TAG_NAMES_REQ: u8 = 110;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
@@ -315,6 +319,23 @@ where
         }))
     }
 
+    /// Kills EPMD.
+    ///
+    /// This request kills the running EPMD.
+    /// It is almost never used.
+    ///
+    /// If EPMD is killed, this method returns `"OK"`.
+    pub async fn kill(mut self) -> Result<String, EpmdError> {
+        // Request.
+        self.socket.write_u16(1).await?;
+        self.socket.write_u8(TAG_KILL_REQ).await?;
+        self.socket.flush().await?;
+
+        // Response.
+        let result = self.socket.read_string().await?;
+        Ok(result)
+    }
+
     /// Dumps all data from EPMD.
     ///
     /// This request is not really used, it is to be regarded as a debug feature.
@@ -353,10 +374,6 @@ where
 // use handy_async::pattern::{Endian, Pattern};
 // use std::io::{Error, Read, Write};
 
-// /// The default listening port of the EPMD.
-// pub const DEFAULT_EPMD_PORT: u16 = 4369;
-
-// const TAG_KILL_REQ: u8 = 107;
 // const TAG_ALIVE2_REQ: u8 = 120;
 // const TAG_ALIVE2_RESP: u8 = 121;
 
@@ -454,28 +471,6 @@ where
 //                     .read_from(stream)
 //             })
 //             .map(|(stream, (_, _, creation))| (stream, creation))
-//             .map_err(|e| e.into_error())
-//     }
-
-//     /// Kills the EPMD connected by `stream`.
-//     ///
-//     /// This request kills the running EPMD.
-//     /// It is almost never used.
-//     ///
-//     /// If the EPMD is killed, it will returns `"OK"`.
-//     ///
-//     /// # Note
-//     ///
-//     /// For executing asynchronously, we assume that `stream` returns
-//     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-//     pub fn kill<S>(&self, stream: S) -> impl 'static + Future<Item = String, Error = Error> + Send
-//     where
-//         S: Read + Write + Send + 'static,
-//     {
-//         futures::finished((stream, ()))
-//             .and_then(|(stream, _)| with_len(TAG_KILL_REQ).write_into(stream))
-//             .and_then(|(stream, _)| Utf8(All).read_from(stream))
-//             .map(|(_, v)| v)
 //             .map_err(|e| e.into_error())
 //     }
 
