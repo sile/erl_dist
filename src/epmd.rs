@@ -5,6 +5,7 @@
 //!
 //! See [EPMD Protocol](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details about the protocol.
+use crate::Creation;
 use byteorder::{BigEndian, ByteOrder as _};
 use futures::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use std::str::FromStr;
@@ -12,6 +13,7 @@ use std::str::FromStr;
 /// The default listening port of the EPMD.
 pub const DEFAULT_EPMD_PORT: u16 = 4369;
 
+// TODO: move module
 #[derive(Debug)]
 pub struct Socket<T> {
     inner: T,
@@ -23,6 +25,10 @@ where
 {
     pub fn new(inner: T) -> Self {
         Self { inner }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
     }
 
     async fn write_u8(&mut self, v: u8) -> std::io::Result<()> {
@@ -84,11 +90,14 @@ where
     }
 }
 
-const TAG_KILL_REQ: u8 = 107;
 const TAG_DUMP_REQ: u8 = 100;
+const TAG_KILL_REQ: u8 = 107;
 const TAG_NAMES_REQ: u8 = 110;
-const TAG_PORT_PLEASE2_REQ: u8 = 122;
+const TAG_ALIVE2_X_RESP: u8 = 118;
 const TAG_PORT2_RESP: u8 = 119;
+const TAG_ALIVE2_REQ: u8 = 120;
+const TAG_ALIVE2_RESP: u8 = 121;
+const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
 #[derive(Debug, Clone)]
 pub struct NodeName {
@@ -186,45 +195,17 @@ pub struct NodeInfo {
     pub extra: Vec<u8>,
 }
 
-// TODO
-// impl NodeInfo {
-//     /// Makes a new [`NodeInfo`] instance with the default parameters.
-//     ///
-//     /// This is equivalent to the following code:
-//     ///
-//     /// ```
-//     /// # use erl_dist::epmd::{NodeInfo, NodeType, Protocol};
-//     /// # let name = "foo";
-//     /// # let port = 0;
-//     /// NodeInfo {
-//     ///     name: name.to_string(),
-//     ///     port: port,
-//     ///     node_type: NodeType::Normal,
-//     ///     protocol: Protocol::TcpIpV4,
-//     ///     highest_version: 5,
-//     ///     lowest_version: 5,
-//     ///     extra: Vec::new(),
-//     /// }
-//     /// # ;
-//     /// ```
-//     pub fn new(name: &str, port: u16) -> Self {
-//         NodeInfo {
-//             name: name.to_string(),
-//             port,
-//             node_type: NodeType::Normal,
-//             protocol: Protocol::TcpIpV4,
-//             highest_version: 5,
-//             lowest_version: 5,
-//             extra: Vec::new(),
-//         }
-//     }
-
-//     /// Sets the node type of this `NodeInfo` to `Hidden`.
-//     pub fn set_hidden(&mut self) -> &mut Self {
-//         self.node_type = NodeType::Hidden;
-//         self
-//     }
-// }
+impl NodeInfo {
+    fn bytes_len(&self) -> usize {
+        2 + self.name.len() + // name
+        2 + // port
+        1 + // node_type
+        1 + // protocol
+        2 + // highest_version
+        2 + // lowest_version
+        2 + self.extra.len() // extra
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -244,6 +225,12 @@ pub enum EpmdError {
     #[error("todo")]
     UnknownProtocol { value: u8 },
 
+    #[error("todo")]
+    UnknownResponseTag { tag: u8 },
+
+    #[error("todo")]
+    RegisterNodeError { code: u8 },
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -262,6 +249,64 @@ where
             socket: Socket::new(socket),
         }
     }
+
+    /// Registers a node in EPMD.
+    ///
+    /// The connection created to the EPMD must be kept as long as the node is a distributed node.
+    /// When the connection is closed, the node is automatically unregistered from the EPMD.
+    pub async fn register(mut self, node: NodeInfo) -> Result<(T, Creation), EpmdError> {
+        // Request.
+        // TODO: validation
+        self.socket.write_u16(1 + node.bytes_len() as u16).await?;
+        self.socket.write_u8(TAG_ALIVE2_REQ).await?;
+        self.socket.write_u16(node.port).await?;
+        self.socket.write_u8(node.node_type as u8).await?;
+        self.socket.write_u8(node.protocol as u8).await?;
+        self.socket.write_u16(node.highest_version).await?;
+        self.socket.write_u16(node.lowest_version).await?;
+        self.socket.write_u16(node.name.len() as u16).await?;
+        self.socket.write_all(node.name.as_bytes()).await?;
+        self.socket.write_u16(node.extra.len() as u16).await?;
+        self.socket.write_all(&node.extra).await?;
+        self.socket.flush().await?;
+
+        // Response.
+        match self.socket.read_u8().await? {
+            TAG_ALIVE2_RESP => {
+                match self.socket.read_u8().await? {
+                    0 => {}
+                    code => return Err(EpmdError::RegisterNodeError { code }),
+                }
+
+                let creation = Creation::new(u32::from(self.socket.read_u16().await?));
+                Ok((self.socket.into_inner(), creation))
+            }
+            TAG_ALIVE2_X_RESP => {
+                match self.socket.read_u8().await? {
+                    0 => {}
+                    code => return Err(EpmdError::RegisterNodeError { code }),
+                }
+
+                let creation = Creation::new(self.socket.read_u32().await?);
+                Ok((self.socket.into_inner(), creation))
+            }
+            tag => Err(EpmdError::UnknownResponseTag { tag }),
+        }
+    }
+    //             .and_then(|(stream, _)| {
+    //                 let to_creation = |c| {
+    //                     Creation::from_u16(c).ok_or_else(|| invalid_data!("Too large creation: {}", c))
+    //                 };
+    //                 (
+    //                     U8.expect_eq(TAG_ALIVE2_RESP),
+    //                     U8.expect_eq(0),
+    //                     U16.be().and_then(to_creation),
+    //                 )
+    //                     .read_from(stream)
+    //             })
+    //             .map(|(stream, (_, _, creation))| (stream, creation))
+    //             .map_err(|e| e.into_error())
+    //     }
 
     /// Gets all registered names from EPMD.
     pub async fn get_names(mut self) -> Result<Vec<NodeName>, EpmdError> {
@@ -365,117 +410,3 @@ where
         Ok(info)
     }
 }
-
-// use crate::Creation;
-// use futures::{self, Future};
-// use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
-// use handy_async::pattern::combinators::BE;
-// use handy_async::pattern::read::{All, LengthPrefixedBytes, Utf8, U16, U32, U8};
-// use handy_async::pattern::{Endian, Pattern};
-// use std::io::{Error, Read, Write};
-
-// const TAG_ALIVE2_REQ: u8 = 120;
-// const TAG_ALIVE2_RESP: u8 = 121;
-
-// /// EPMD client.
-// ///
-// /// This implements the client side of the EPMD protocol.
-// ///
-// /// # Examples
-// ///
-// /// Queries the information of the "foo" node:
-// ///
-// /// ```no_run
-// /// use fibers::{Executor, InPlaceExecutor, Spawn};
-// /// use fibers::net::TcpStream;
-// /// use futures::Future;
-// /// use erl_dist::epmd::{DEFAULT_EPMD_PORT, EpmdClient};
-// ///
-// /// # fn main() {
-// /// let epmd_addr = format!("127.0.0.1:{}", DEFAULT_EPMD_PORT).parse().unwrap();
-// /// let target_node = "foo";
-// /// let mut executor = InPlaceExecutor::new().unwrap();
-// ///
-// /// // Queries the node information asynchronously.
-// /// let monitor = executor.spawn_monitor(TcpStream::connect(epmd_addr)
-// ///     .and_then(move |socket| EpmdClient::new().get_node_info(socket, target_node)));
-// /// let result = executor.run_fiber(monitor).unwrap();
-// ///
-// /// match result {
-// ///     Err(e) => println!("Failed: {}", e),
-// ///     Ok(None) => println!("Not found:"),
-// ///     Ok(Some(info)) => println!("Found: {:?}", info),
-// /// }
-// /// # }
-// /// ```
-// ///
-// /// See [epmd_cli.rs](https://github.com/sile/erl_dist/blob/master/examples/epmd_cli.rs) file
-// /// for more comprehensive examples.
-// #[derive(Debug)]
-// pub struct EpmdClient {
-//     _dummy: (),
-// }
-
-// impl Default for EpmdClient {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
-
-// impl EpmdClient {
-//     /// Makes a new `EpmdClient` instance.
-//     pub fn new() -> Self {
-//         EpmdClient { _dummy: () }
-//     }
-
-//     /// Registers a node in the EPMD connected by `stream`.
-//     ///
-//     /// The connection created to the EPMD must be kept as long as the node is a distributed node.
-//     /// When the connection is closed, the node is automatically unregistered from the EPMD.
-//     ///
-//     /// # Note
-//     ///
-//     /// For executing asynchronously, we assume that `stream` returns
-//     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-//     pub fn register<S>(
-//         &self,
-//         stream: S,
-//         node: NodeInfo,
-//     ) -> impl 'static + Future<Item = (S, Creation), Error = Error> + Send
-//     where
-//         S: Read + Write + Send + 'static,
-//     {
-//         futures::finished(stream)
-//             .and_then(move |stream| {
-//                 let req = (
-//                     TAG_ALIVE2_REQ,
-//                     node.port.be(),
-//                     node.node_type.as_u8(),
-//                     node.protocol.as_u8(),
-//                     node.highest_version.be(),
-//                     node.lowest_version.be(),
-//                     ((node.name.len() as u16).be(), node.name),
-//                     ((node.extra.len() as u16).be(), node.extra),
-//                 );
-//                 with_len(req).write_into(stream)
-//             })
-//             .and_then(|(stream, _)| {
-//                 let to_creation = |c| {
-//                     Creation::from_u16(c).ok_or_else(|| invalid_data!("Too large creation: {}", c))
-//                 };
-//                 (
-//                     U8.expect_eq(TAG_ALIVE2_RESP),
-//                     U8.expect_eq(0),
-//                     U16.be().and_then(to_creation),
-//                 )
-//                     .read_from(stream)
-//             })
-//             .map(|(stream, (_, _, creation))| (stream, creation))
-//             .map_err(|e| e.into_error())
-//     }
-
-// }
-
-// fn with_len<P: ExternalSize>(pattern: P) -> (BE<u16>, P) {
-//     ((pattern.external_size() as u16).be(), pattern)
-// }

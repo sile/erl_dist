@@ -31,6 +31,19 @@ pub mod epmd;
 // pub mod handshake;
 // pub mod message;
 
+// #[derive(Debug, Clone, Copy,PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Creation(u32);
+
+impl Creation {
+    pub const fn new(n: u32) -> Self {
+        Self(n)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 // /// The generation number of a distributed node.
 // ///
 // /// If a node restarts, the count will be incremented.

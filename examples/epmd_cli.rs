@@ -8,7 +8,7 @@
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
 use clap::{Parser, Subcommand};
-use erl_dist::epmd::{EpmdClient, NodeInfo};
+use erl_dist::epmd::{EpmdClient, NodeInfo, NodeType, Protocol};
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -27,14 +27,22 @@ struct Args {
 enum Command {
     Names,
     Dump,
-    NodeInfo { node: String },
+    NodeInfo {
+        node: String,
+    },
     Kill,
-    // Register {
-    //     name: String,
-    //     port: u16,
-    //     #[clap(long)]
-    //     hidden: bool,
-    // },
+    Register {
+        name: String,
+
+        #[clap(long)]
+        hidden: bool,
+
+        #[clap(long, default_value_t = 6)]
+        highest_version: u16,
+
+        #[clap(long, default_value_t = 5)]
+        lowest_version: u16,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -43,6 +51,8 @@ fn main() -> anyhow::Result<()> {
     smol::block_on(async {
         let stream =
             smol::net::TcpStream::connect(format!("{}:{}", args.epmd_host, args.epmd_port)).await?;
+        let local_addr = stream.local_addr()?;
+
         let client = EpmdClient::new(stream);
 
         match args.command {
@@ -82,21 +92,33 @@ fn main() -> anyhow::Result<()> {
                 let result = client.kill().await?;
                 let result = serde_json::json!({ "result": result });
                 println!("{}", serde_json::to_string_pretty(&result)?);
-            } // Command::Register { name, port, hidden } => {
-              //     // 'ALIVE2_REQ'
-              //     //
-              //     let mut node = NodeInfo::new(&name, port);
-              //     if hidden {
-              //         node.set_hidden();
-              //     }
-              //     let monitor = executor
-              //         .spawn_monitor(connect.and_then(move |socket| client.register(socket, node)));
-              //     let (_, creation) = executor
-              //         .run_fiber(monitor)
-              //         .unwrap()
-              //         .expect("'register' request failed");
-              //     println!("CREATION: {:?}", creation);
-              // }
+            }
+            Command::Register {
+                name,
+                hidden,
+                highest_version,
+                lowest_version,
+            } => {
+                // 'ALIVE2_REQ'
+                let node = NodeInfo {
+                    name: name.to_string(),
+                    port: local_addr.port(),
+                    node_type: if hidden {
+                        NodeType::Hidden
+                    } else {
+                        NodeType::Normal
+                    },
+                    protocol: Protocol::TcpIpV4,
+                    highest_version,
+                    lowest_version,
+                    extra: Vec::new(),
+                };
+                let (_, creation) = client.register(node).await?;
+                let result = serde_json::json!({
+                    "creation": creation.get()
+                });
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
         }
         Ok(())
     })
