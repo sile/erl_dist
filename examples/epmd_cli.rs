@@ -8,8 +8,7 @@
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
 use clap::{Parser, Subcommand};
-//use erl_dist::epmd::NodeInfo;
-use erl_dist::epmd::EpmdClient;
+use erl_dist::epmd::{EpmdClient, NodeInfo};
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -28,9 +27,7 @@ struct Args {
 enum Command {
     Names,
     // Dump,
-    // NodeInfo {
-    //     node: String,
-    // },
+    NodeInfo { node: String },
     // Kill,
     // Register {
     //     name: String,
@@ -57,6 +54,23 @@ fn main() -> anyhow::Result<()> {
                     .map(|n| serde_json::json!({"name": n.name, "port": n.port}))
                     .collect::<Vec<_>>());
                 println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            Command::NodeInfo { node } => {
+                // 'PORT_PLEASE2_REQ'
+                if let Some(info) = client.get_node_info(&node).await? {
+                    let result = serde_json::json!({
+                        "name": info.name,
+                        "port": info.port,
+                        "node_type": format!("{:?} ({})", info.node_type, info.node_type as u8),
+                        "protocol": format!("{:?} ({})", info.protocol, info.protocol as u8),
+                        "highest_version": info.highest_version,
+                        "lowest_version": info.lowest_version,
+                        "extra": info.extra
+                    });
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    anyhow::bail!("No such node: {:?}", node);
+                }
             } // Command::Dump => {
               //     // 'DUMP_REQ'
               //     //
@@ -69,19 +83,6 @@ fn main() -> anyhow::Result<()> {
               //     println!("Dump");
               //     println!("=====\n");
               //     println!("{:?}", dump);
-              // }
-              // Command::NodeInfo { node } => {
-              //     // 'PORT_PLEASE2_REQ'
-              //     //
-              //     let monitor = executor
-              //         .spawn_monitor(connect.and_then(move |socket| client.get_node_info(socket, &node)));
-              //     let info = executor
-              //         .run_fiber(monitor)
-              //         .unwrap()
-              //         .expect("'node_info' request failed");
-              //     println!("Node Info");
-              //     println!("=========\n");
-              //     println!("{:?}", info);
               // }
               // Command::Kill => {
               //     // 'KILL_REQ'

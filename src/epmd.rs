@@ -32,6 +32,26 @@ where
         self.inner.write_all(&buf).await
     }
 
+    async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.inner.write_all(&buf).await
+    }
+
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await
+    }
+
+    async fn read_u8(&mut self) -> std::io::Result<u8> {
+        let mut buf = [0; 1];
+        self.inner.read_exact(&mut buf).await?;
+        Ok(buf[0])
+    }
+
+    async fn read_u16(&mut self) -> std::io::Result<u16> {
+        let mut buf = [0; 2];
+        self.inner.read_exact(&mut buf).await?;
+        Ok(BigEndian::read_u16(&buf))
+    }
+
     async fn read_u32(&mut self) -> std::io::Result<u32> {
         let mut buf = [0; 4];
         self.inner.read_exact(&mut buf).await?;
@@ -43,9 +63,27 @@ where
         self.inner.read_to_string(&mut buf).await?;
         Ok(buf)
     }
+
+    async fn read_u16_bytes(&mut self) -> std::io::Result<Vec<u8>> {
+        let mut buf = vec![0; usize::from(self.read_u16().await?)];
+        self.inner.read_exact(&mut buf).await?;
+        Ok(buf)
+    }
+
+    async fn read_u16_string(&mut self) -> std::io::Result<String> {
+        let buf = self.read_u16_bytes().await?;
+        String::from_utf8(buf).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            )
+        })
+    }
 }
 
 const TAG_NAMES_REQ: u8 = 110;
+const TAG_PORT_PLEASE2_REQ: u8 = 122;
+const TAG_PORT2_RESP: u8 = 119;
 
 #[derive(Debug, Clone)]
 pub struct NodeName {
@@ -73,6 +111,116 @@ impl FromStr for NodeName {
     }
 }
 
+/// Type of a distributed node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum NodeType {
+    /// Hidden node (C-node).
+    Hidden = 72,
+
+    /// Normal Erlang node.
+    Normal = 77,
+}
+
+impl TryFrom<u8> for NodeType {
+    type Error = EpmdError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            72 => Ok(Self::Hidden),
+            77 => Ok(Self::Normal),
+            _ => Err(EpmdError::UnknownNodeType { value }),
+        }
+    }
+}
+
+/// Protocol for communicating with a distributed node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Protocol {
+    /// TCP/IPv4.
+    TcpIpV4 = 0,
+}
+
+impl TryFrom<u8> for Protocol {
+    type Error = EpmdError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::TcpIpV4),
+            _ => Err(EpmdError::UnknownProtocol { value }),
+        }
+    }
+}
+
+/// Node information.
+#[derive(Debug, Clone)]
+pub struct NodeInfo {
+    /// The node name.
+    pub name: String,
+
+    /// The port number on which the node accept connection requests.
+    pub port: u16,
+
+    /// The node type.
+    pub node_type: NodeType,
+
+    /// The protocol for communicating with the node.
+    pub protocol: Protocol,
+
+    /// The highest distribution version that this node can handle.
+    ///
+    /// The value in Erlang/OTP R6B and later is 5.
+    pub highest_version: u16,
+
+    /// The lowest distribution version that this node can handle.
+    ///
+    /// The value in Erlang/OTP R6B and later is 5.
+    pub lowest_version: u16,
+
+    /// Extra field.
+    pub extra: Vec<u8>,
+}
+
+// TODO
+// impl NodeInfo {
+//     /// Makes a new [`NodeInfo`] instance with the default parameters.
+//     ///
+//     /// This is equivalent to the following code:
+//     ///
+//     /// ```
+//     /// # use erl_dist::epmd::{NodeInfo, NodeType, Protocol};
+//     /// # let name = "foo";
+//     /// # let port = 0;
+//     /// NodeInfo {
+//     ///     name: name.to_string(),
+//     ///     port: port,
+//     ///     node_type: NodeType::Normal,
+//     ///     protocol: Protocol::TcpIpV4,
+//     ///     highest_version: 5,
+//     ///     lowest_version: 5,
+//     ///     extra: Vec::new(),
+//     /// }
+//     /// # ;
+//     /// ```
+//     pub fn new(name: &str, port: u16) -> Self {
+//         NodeInfo {
+//             name: name.to_string(),
+//             port,
+//             node_type: NodeType::Normal,
+//             protocol: Protocol::TcpIpV4,
+//             highest_version: 5,
+//             lowest_version: 5,
+//             extra: Vec::new(),
+//         }
+//     }
+
+//     /// Sets the node type of this `NodeInfo` to `Hidden`.
+//     pub fn set_hidden(&mut self) -> &mut Self {
+//         self.node_type = NodeType::Hidden;
+//         self
+//     }
+// }
+
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum EpmdError {
@@ -82,13 +230,25 @@ pub enum EpmdError {
     #[error("todo")]
     MalformedNodeNameLine,
 
+    #[error("todo")]
+    UnexpectedTag,
+
+    #[error("todo")]
+    GetNodeInfoError { code: u8 },
+
+    #[error("todo")]
+    UnknownNodeType { value: u8 },
+
+    #[error("todo")]
+    UnknownProtocol { value: u8 },
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
 
 #[derive(Debug)]
 pub struct EpmdClient<T> {
-    epmd_port: u16,
+    epmd_port: u16, // TODO: remove
     socket: Socket<T>,
 }
 
@@ -108,6 +268,7 @@ where
         // Request.
         self.socket.write_u16(1).await?; // Length
         self.socket.write_u8(TAG_NAMES_REQ).await?;
+        self.socket.flush().await?;
 
         // Response.
         self.read_and_check_epmd_port().await?;
@@ -120,6 +281,73 @@ where
             .collect()
     }
 
+    /// Gets the distribution port (and other information) of
+    /// the `node_name` node from EPMD.
+    ///
+    /// If the node has not been registered in the EPMD, this method will return `None`.
+    pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeInfo>, EpmdError> {
+        // Request.
+        // TODO: validation
+        self.socket.write_u16((1 + node_name.len()) as u16).await?; // Length
+        self.socket.write_u8(TAG_PORT_PLEASE2_REQ).await?;
+        self.socket.write_all(node_name.as_bytes()).await?;
+        self.socket.flush().await?;
+
+        // Response.
+        if self.socket.read_u8().await? != TAG_PORT2_RESP {
+            return Err(EpmdError::UnexpectedTag);
+        }
+
+        let result = self.socket.read_u8().await?;
+        if result == 1 {
+            return Ok(None);
+        } else if result != 0 {
+            return Err(EpmdError::GetNodeInfoError { code: result });
+        }
+
+        Ok(Some(NodeInfo {
+            port: self.socket.read_u16().await?,
+            node_type: NodeType::try_from(self.socket.read_u8().await?)?,
+            protocol: Protocol::try_from(self.socket.read_u8().await?)?,
+            highest_version: self.socket.read_u16().await?,
+            lowest_version: self.socket.read_u16().await?,
+            name: self.socket.read_u16_string().await?,
+            extra: self.socket.read_u16_bytes().await?,
+        }))
+    }
+
+    //             .and_then(|(stream, _)| {
+    //                 let info = (
+    //                     U16.be(),
+    //                     U8,
+    //                     U8,
+    //                     U16.be(),
+    //                     U16.be(),
+    //                     Utf8(LengthPrefixedBytes(U16.be())),
+    //                     LengthPrefixedBytes(U16.be()),
+    //                 )
+    //                     .map(|t| NodeInfo {
+    //                         port: t.0,
+    //                         node_type: NodeType::from(t.1),
+    //                         protocol: Protocol::from(t.2),
+    //                         highest_version: t.3,
+    //                         lowest_version: t.4,
+    //                         name: t.5,
+    //                         extra: t.6,
+    //                     });
+    //                 let resp = (U8.expect_eq(TAG_PORT2_RESP), U8).and_then(|(_, result)| {
+    //                     if result == 0 {
+    //                         Some(info)
+    //                     } else {
+    //                         None
+    //                     }
+    //                 });
+    //                 resp.read_from(stream)
+    //             })
+    //             .map(|(_, info)| info)
+    //             .map_err(|e| e.into_error())
+    //     }
+
     async fn read_and_check_epmd_port(&mut self) -> Result<(), EpmdError> {
         let epmd_port = self.socket.read_u32().await?;
         if epmd_port != u32::from(self.epmd_port) {
@@ -127,20 +355,6 @@ where
         }
         Ok(())
     }
-
-    //     pub fn get_names<S>(
-    //         &self,
-    //         stream: S,
-    //     ) -> impl 'static + Future<Item = String, Error = Error> + Send
-    //     where
-    //         S: Read + Write + Send + 'static,
-    //     {
-    //         futures::finished((stream, ()))
-    //             .and_then(|(stream, _)| with_len(TAG_NAMES_REQ).write_into(stream))
-    //             .and_then(|(stream, _)| (U32.be(), Utf8(All)).read_from(stream))
-    //             .map(|(_, (_, names))| names)
-    //             .map_err(|e| e.into_error())
-    //     }
 }
 
 // use crate::Creation;
@@ -155,8 +369,6 @@ where
 // pub const DEFAULT_EPMD_PORT: u16 = 4369;
 
 // const TAG_KILL_REQ: u8 = 107;
-// const TAG_PORT_PLEASE2_REQ: u8 = 122;
-// const TAG_PORT2_RESP: u8 = 119;
 // const TAG_DUMP_REQ: u8 = 100;
 // const TAG_ALIVE2_REQ: u8 = 120;
 // const TAG_ALIVE2_RESP: u8 = 121;
@@ -258,58 +470,6 @@ where
 //             .map_err(|e| e.into_error())
 //     }
 
-//     /// Queries the distribution port (and other information) of
-//     /// the `node_name` node to the EPMD connected by `stream`.
-//     ///
-//     /// If the node has not been registered in the EPMD, this will return `None`.
-//     ///
-//     /// # Note
-//     ///
-//     /// For executing asynchronously, we assume that `stream` returns
-//     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-//     pub fn get_node_info<S>(
-//         &self,
-//         stream: S,
-//         node_name: &str,
-//     ) -> impl 'static + Future<Item = Option<NodeInfo>, Error = Error> + Send
-//     where
-//         S: Read + Write + Send + 'static,
-//     {
-//         let name = node_name.to_string();
-//         futures::finished((stream, ()))
-//             .and_then(|(stream, _)| with_len((TAG_PORT_PLEASE2_REQ, name)).write_into(stream))
-//             .and_then(|(stream, _)| {
-//                 let info = (
-//                     U16.be(),
-//                     U8,
-//                     U8,
-//                     U16.be(),
-//                     U16.be(),
-//                     Utf8(LengthPrefixedBytes(U16.be())),
-//                     LengthPrefixedBytes(U16.be()),
-//                 )
-//                     .map(|t| NodeInfo {
-//                         port: t.0,
-//                         node_type: NodeType::from(t.1),
-//                         protocol: Protocol::from(t.2),
-//                         highest_version: t.3,
-//                         lowest_version: t.4,
-//                         name: t.5,
-//                         extra: t.6,
-//                     });
-//                 let resp = (U8.expect_eq(TAG_PORT2_RESP), U8).and_then(|(_, result)| {
-//                     if result == 0 {
-//                         Some(info)
-//                     } else {
-//                         None
-//                     }
-//                 });
-//                 resp.read_from(stream)
-//             })
-//             .map(|(_, info)| info)
-//             .map_err(|e| e.into_error())
-//     }
-
 //     /// Kills the EPMD connected by `stream`.
 //     ///
 //     /// This request kills the running EPMD.
@@ -363,130 +523,6 @@ where
 //             .and_then(|(stream, _)| (U32.be(), Utf8(All)).read_from(stream))
 //             .map(|(_, (_, dump))| dump)
 //             .map_err(|e| e.into_error())
-//     }
-// }
-
-// /// Information on a distributed node that registered in the EPMD.
-// #[derive(Debug, Clone)]
-// pub struct NodeInfo {
-//     /// The node name.
-//     pub name: String,
-
-//     /// The port number on which the node accept connection requests.
-//     pub port: u16,
-
-//     /// The node type.
-//     pub node_type: NodeType,
-
-//     /// The protocol for communicating with the node.
-//     pub protocol: Protocol,
-
-//     /// The highest distribution version that this node can handle.
-//     ///
-//     /// The value in Erlang/OTP R6B and later is 5.
-//     pub highest_version: u16,
-
-//     /// The lowest distribution version that this node can handle.
-//     ///
-//     /// The value in Erlang/OTP R6B and later is 5.
-//     pub lowest_version: u16,
-
-//     /// Extra field.
-//     pub extra: Vec<u8>,
-// }
-// impl NodeInfo {
-//     /// Makes a new `NodeInfo` with the default parameters.
-//     ///
-//     /// This is equivalent to the following code:
-//     ///
-//     /// ```
-//     /// # use erl_dist::epmd::{NodeInfo, NodeType, Protocol};
-//     /// # let name = "foo";
-//     /// # let port = 0;
-//     /// NodeInfo {
-//     ///     name: name.to_string(),
-//     ///     port: port,
-//     ///     node_type: NodeType::Normal,
-//     ///     protocol: Protocol::TcpIpV4,
-//     ///     highest_version: 5,
-//     ///     lowest_version: 5,
-//     ///     extra: Vec::new(),
-//     /// }
-//     /// # ;
-//     /// ```
-//     pub fn new(name: &str, port: u16) -> Self {
-//         NodeInfo {
-//             name: name.to_string(),
-//             port,
-//             node_type: NodeType::Normal,
-//             protocol: Protocol::TcpIpV4,
-//             highest_version: 5,
-//             lowest_version: 5,
-//             extra: Vec::new(),
-//         }
-//     }
-
-//     /// Sets the node type of this `NodeInfo` to `Hidden`.
-//     pub fn set_hidden(&mut self) -> &mut Self {
-//         self.node_type = NodeType::Hidden;
-//         self
-//     }
-// }
-
-// /// Protocol for communicating with a distributed node.
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub enum Protocol {
-//     /// TCP/IPv4.
-//     TcpIpV4,
-
-//     /// Unknown protocol.
-//     Unknown(u8),
-// }
-// impl Protocol {
-//     fn as_u8(&self) -> u8 {
-//         match *self {
-//             Protocol::TcpIpV4 => 0,
-//             Protocol::Unknown(b) => b,
-//         }
-//     }
-// }
-// impl From<u8> for Protocol {
-//     fn from(f: u8) -> Self {
-//         match f {
-//             0 => Protocol::TcpIpV4,
-//             _ => Protocol::Unknown(f),
-//         }
-//     }
-// }
-
-// /// Type of a distributed node.
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub enum NodeType {
-//     /// Hidden node (C-node).
-//     Hidden,
-
-//     /// Normal Erlang node.
-//     Normal,
-
-//     /// Unknown node type.
-//     Unknown(u8),
-// }
-// impl NodeType {
-//     fn as_u8(&self) -> u8 {
-//         match *self {
-//             NodeType::Hidden => 72,
-//             NodeType::Normal => 77,
-//             NodeType::Unknown(b) => b,
-//         }
-//     }
-// }
-// impl From<u8> for NodeType {
-//     fn from(f: u8) -> Self {
-//         match f {
-//             72 => NodeType::Hidden,
-//             77 => NodeType::Normal,
-//             _ => NodeType::Unknown(f),
-//         }
 //     }
 // }
 
