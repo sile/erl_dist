@@ -81,6 +81,7 @@ where
     }
 }
 
+const TAG_DUMP_REQ: u8 = 100;
 const TAG_NAMES_REQ: u8 = 110;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
 const TAG_PORT2_RESP: u8 = 119;
@@ -225,9 +226,6 @@ pub struct NodeInfo {
 #[non_exhaustive]
 pub enum EpmdError {
     #[error("todo")]
-    EpmdPortMismatch,
-
-    #[error("todo")]
     MalformedNodeNameLine,
 
     #[error("todo")]
@@ -248,7 +246,6 @@ pub enum EpmdError {
 
 #[derive(Debug)]
 pub struct EpmdClient<T> {
-    epmd_port: u16, // TODO: remove
     socket: Socket<T>,
 }
 
@@ -256,9 +253,8 @@ impl<T> EpmdClient<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(epmd_port: u16, socket: T) -> Self {
+    pub fn new(socket: T) -> Self {
         Self {
-            epmd_port,
             socket: Socket::new(socket),
         }
     }
@@ -271,7 +267,7 @@ where
         self.socket.flush().await?;
 
         // Response.
-        self.read_and_check_epmd_port().await?;
+        let _epmd_port = self.socket.read_u32().await?;
         let node_info_text = self.socket.read_string().await?;
 
         node_info_text
@@ -284,7 +280,7 @@ where
     /// Gets the distribution port (and other information) of
     /// the `node_name` node from EPMD.
     ///
-    /// If the node has not been registered in the EPMD, this method will return `None`.
+    /// If the node has not been registered in the connected EPMD, this method will return `None`.
     pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeInfo>, EpmdError> {
         // Request.
         // TODO: validation
@@ -298,11 +294,14 @@ where
             return Err(EpmdError::UnexpectedTag);
         }
 
-        let result = self.socket.read_u8().await?;
-        if result == 1 {
-            return Ok(None);
-        } else if result != 0 {
-            return Err(EpmdError::GetNodeInfoError { code: result });
+        match self.socket.read_u8().await? {
+            0 => {}
+            1 => {
+                return Ok(None);
+            }
+            code => {
+                return Err(EpmdError::GetNodeInfoError { code });
+            }
         }
 
         Ok(Some(NodeInfo {
@@ -316,44 +315,33 @@ where
         }))
     }
 
-    //             .and_then(|(stream, _)| {
-    //                 let info = (
-    //                     U16.be(),
-    //                     U8,
-    //                     U8,
-    //                     U16.be(),
-    //                     U16.be(),
-    //                     Utf8(LengthPrefixedBytes(U16.be())),
-    //                     LengthPrefixedBytes(U16.be()),
-    //                 )
-    //                     .map(|t| NodeInfo {
-    //                         port: t.0,
-    //                         node_type: NodeType::from(t.1),
-    //                         protocol: Protocol::from(t.2),
-    //                         highest_version: t.3,
-    //                         lowest_version: t.4,
-    //                         name: t.5,
-    //                         extra: t.6,
-    //                     });
-    //                 let resp = (U8.expect_eq(TAG_PORT2_RESP), U8).and_then(|(_, result)| {
-    //                     if result == 0 {
-    //                         Some(info)
-    //                     } else {
-    //                         None
-    //                     }
-    //                 });
-    //                 resp.read_from(stream)
-    //             })
-    //             .map(|(_, info)| info)
-    //             .map_err(|e| e.into_error())
-    //     }
+    /// Dumps all data from EPMD.
+    ///
+    /// This request is not really used, it is to be regarded as a debug feature.
+    ///
+    /// The result value is a string written for each node kept in the connected EPMD.
+    ///
+    /// The format of each entry is
+    ///
+    /// ```shell
+    /// "active name ${NODE_NAME} at port ${PORT}, fd = ${FD}\n"
+    /// ```
+    ///
+    /// or
+    ///
+    /// ```shell
+    /// "old/unused name ${NODE_NAME} at port ${PORT}, fd = ${FD}\n"
+    /// ```
+    pub async fn dump(mut self) -> Result<String, EpmdError> {
+        // Request.
+        self.socket.write_u16(1).await?;
+        self.socket.write_u8(TAG_DUMP_REQ).await?;
+        self.socket.flush().await?;
 
-    async fn read_and_check_epmd_port(&mut self) -> Result<(), EpmdError> {
-        let epmd_port = self.socket.read_u32().await?;
-        if epmd_port != u32::from(self.epmd_port) {
-            return Err(EpmdError::EpmdPortMismatch);
-        }
-        Ok(())
+        // Response.
+        let _epmd_port = self.socket.read_u32().await?;
+        let info = self.socket.read_string().await?;
+        Ok(info)
     }
 }
 
@@ -369,7 +357,6 @@ where
 // pub const DEFAULT_EPMD_PORT: u16 = 4369;
 
 // const TAG_KILL_REQ: u8 = 107;
-// const TAG_DUMP_REQ: u8 = 100;
 // const TAG_ALIVE2_REQ: u8 = 120;
 // const TAG_ALIVE2_RESP: u8 = 121;
 
@@ -492,38 +479,6 @@ where
 //             .map_err(|e| e.into_error())
 //     }
 
-//     /// Dumps all data from the EPMD connected by `stream`.
-//     ///
-//     /// This request is not really used, it is to be regarded as a debug feature.
-//     ///
-//     /// The result value is a string written for each node kept in the EPMD.
-//     ///
-//     /// The format of each entry is
-//     ///
-//     /// ```shell
-//     /// "active name ${NODE_NAME} at port ${PORT}, fd = ${FD}\n"
-//     /// ```
-//     ///
-//     /// or
-//     ///
-//     /// ```shell
-//     /// "old/unused name ${NODE_NAME} at port ${PORT}, fd = ${FD}\n"
-//     /// ```
-//     ///
-//     /// # Note
-//     ///
-//     /// For executing asynchronously, we assume that `stream` returns
-//     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-//     pub fn dump<S>(&self, stream: S) -> impl 'static + Future<Item = String, Error = Error> + Send
-//     where
-//         S: Read + Write + Send + 'static,
-//     {
-//         futures::finished((stream, ()))
-//             .and_then(|(stream, _)| with_len(TAG_DUMP_REQ).write_into(stream))
-//             .and_then(|(stream, _)| (U32.be(), Utf8(All)).read_from(stream))
-//             .map(|(_, (_, dump))| dump)
-//             .map_err(|e| e.into_error())
-//     }
 // }
 
 // fn with_len<P: ExternalSize>(pattern: P) -> (BE<u16>, P) {

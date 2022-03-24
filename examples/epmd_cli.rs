@@ -26,7 +26,7 @@ struct Args {
 #[derive(Debug, Subcommand)]
 enum Command {
     Names,
-    // Dump,
+    Dump,
     NodeInfo { node: String },
     // Kill,
     // Register {
@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
     smol::block_on(async {
         let stream =
             smol::net::TcpStream::connect(format!("{}:{}", args.epmd_host, args.epmd_port)).await?;
-        let client = EpmdClient::new(args.epmd_port, stream);
+        let client = EpmdClient::new(stream);
 
         match args.command {
             Command::Names => {
@@ -71,20 +71,12 @@ fn main() -> anyhow::Result<()> {
                 } else {
                     anyhow::bail!("No such node: {:?}", node);
                 }
-            } // Command::Dump => {
-              //     // 'DUMP_REQ'
-              //     //
-              //     let monitor =
-              //         executor.spawn_monitor(connect.and_then(move |socket| client.dump(socket)));
-              //     let dump = executor
-              //         .run_fiber(monitor)
-              //         .unwrap()
-              //         .expect("'dump' request failed");
-              //     println!("Dump");
-              //     println!("=====\n");
-              //     println!("{:?}", dump);
-              // }
-              // Command::Kill => {
+            }
+            Command::Dump => {
+                // 'DUMP_REQ'
+                let info = client.dump().await?;
+                println!("{}", info);
+            } // Command::Kill => {
               //     // 'KILL_REQ'
               //     //
               //     let monitor =
