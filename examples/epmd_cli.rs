@@ -34,6 +34,9 @@ enum Command {
     Register {
         name: String,
 
+        #[clap(long, default_value_t = 3000)]
+        port: u16,
+
         #[clap(long)]
         hidden: bool,
 
@@ -51,8 +54,6 @@ fn main() -> anyhow::Result<()> {
     smol::block_on(async {
         let stream =
             smol::net::TcpStream::connect(format!("{}:{}", args.epmd_host, args.epmd_port)).await?;
-        let local_addr = stream.local_addr()?;
-
         let client = EpmdClient::new(stream);
 
         match args.command {
@@ -95,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             }
             Command::Register {
                 name,
+                port,
                 hidden,
                 highest_version,
                 lowest_version,
@@ -102,7 +104,7 @@ fn main() -> anyhow::Result<()> {
                 // 'ALIVE2_REQ'
                 let node = NodeInfo {
                     name: name.to_string(),
-                    port: local_addr.port(),
+                    port,
                     node_type: if hidden {
                         NodeType::Hidden
                     } else {

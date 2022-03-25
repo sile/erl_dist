@@ -1,16 +1,16 @@
-//! EPMD protocol implementations.
+//! EPMD client and other EPMD related components.
 //!
 //! "EPMD" stands for "Erlang Port Mapper Daemon" and
 //! it provides name resolution functionalities for distributed erlang nodes.
 //!
-//! See [EPMD Protocol](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
+//! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details about the protocol.
 use crate::socket::Socket;
 use crate::Creation;
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
-/// The default listening port of the EPMD.
+/// Default EPMD listening port.
 pub const DEFAULT_EPMD_PORT: u16 = 4369;
 
 const TAG_DUMP_REQ: u8 = 100;
@@ -22,9 +22,13 @@ const TAG_ALIVE2_REQ: u8 = 120;
 const TAG_ALIVE2_RESP: u8 = 121;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
-#[derive(Debug, Clone)]
+/// Node name and port.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeNameAndPort {
+    /// Node name.
     pub name: String,
+
+    /// Listening port of this node.
     pub port: u16,
 }
 
@@ -32,18 +36,16 @@ impl FromStr for NodeNameAndPort {
     type Err = EpmdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let error = || EpmdError::MalformedNodeNameAndPortLine { line: s.to_owned() };
+
         if !s.starts_with("name ") {
-            return Err(EpmdError::MalformedNodeNameLine);
+            return Err(error());
         }
 
         let s = &s["name ".len()..];
-        let pos = s
-            .find(" at port ")
-            .ok_or(EpmdError::MalformedNodeNameLine)?;
+        let pos = s.find(" at port ").ok_or_else(error)?;
         let name = s[..pos].to_string();
-        let port = s[pos + " at port ".len()..]
-            .parse()
-            .map_err(|_| EpmdError::MalformedNodeNameLine)?;
+        let port = s[pos + " at port ".len()..].parse().map_err(|_| error())?;
         Ok(Self { name, port })
     }
 }
@@ -130,34 +132,45 @@ impl NodeInfo {
     }
 }
 
+/// EPMD related errors.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
+#[allow(missing_docs)]
 pub enum EpmdError {
-    #[error("todo")]
-    MalformedNodeNameLine,
+    /// Unknown response tag.
+    #[error("received an unknown tag {tag} as the response of {request}")]
+    UnknownResponseTag { request: &'static str, tag: u8 },
 
-    #[error("todo")]
-    UnexpectedTag,
-
-    #[error("todo")]
-    GetNodeInfoError { code: u8 },
-
-    #[error("todo")]
+    /// Unknown node type.
+    #[error("unknown node type {value}")]
     UnknownNodeType { value: u8 },
 
-    #[error("todo")]
+    /// Unknown protocol.
+    #[error("unknown protocol {value}")]
     UnknownProtocol { value: u8 },
 
-    #[error("todo")]
-    UnknownResponseTag { tag: u8 },
+    /// Too long request.
+    #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
+    TooLongRequest { size: usize },
 
-    #[error("todo")]
+    /// PORT_PLEASE2_REQ request failure.
+    #[error("EPMD responded an error code {code} against a PORT_PLEASE2_REQ request")]
+    GetNodeInfoError { code: u8 },
+
+    /// ALIVE2_REQ request failure.
+    #[error("EPMD responded an error code {code} against an ALIVE2_REQ request")]
     RegisterNodeError { code: u8 },
 
+    /// Malformed NAMES_RESP line.
+    #[error("found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:}")]
+    MalformedNodeNameAndPortLine { line: String },
+
+    /// I/O error.
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
 
+/// EPMD client.
 #[derive(Debug)]
 pub struct EpmdClient<T> {
     socket: Socket<T>,
@@ -167,6 +180,9 @@ impl<T> EpmdClient<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Makes a new [`EpmdClient`] instance.
+    ///
+    /// `socket` is a connection to communicate with the target EPMD server.
     pub fn new(socket: T) -> Self {
         Self {
             socket: Socket::new(socket),
@@ -179,8 +195,9 @@ where
     /// When the connection is closed, the node is automatically unregistered from the EPMD.
     pub async fn register(mut self, node: NodeInfo) -> Result<(T, Creation), EpmdError> {
         // Request.
-        // TODO: validation
-        self.socket.write_u16(1 + node.bytes_len() as u16).await?;
+        let size = 1 + node.bytes_len();
+        let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
+        self.socket.write_u16(size).await?;
         self.socket.write_u8(TAG_ALIVE2_REQ).await?;
         self.socket.write_u16(node.port).await?;
         self.socket.write_u8(node.node_type as u8).await?;
@@ -213,7 +230,10 @@ where
                 let creation = Creation::new(self.socket.read_u32().await?);
                 Ok((self.socket.into_inner(), creation))
             }
-            tag => Err(EpmdError::UnknownResponseTag { tag }),
+            tag => Err(EpmdError::UnknownResponseTag {
+                request: "ALIVE2_REQ",
+                tag,
+            }),
         }
     }
 
@@ -241,15 +261,20 @@ where
     /// If the node has not been registered in the connected EPMD, this method will return `None`.
     pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeInfo>, EpmdError> {
         // Request.
-        // TODO: validation
-        self.socket.write_u16((1 + node_name.len()) as u16).await?; // Length
+        let size = 1 + node_name.len();
+        let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
+        self.socket.write_u16(size).await?;
         self.socket.write_u8(TAG_PORT_PLEASE2_REQ).await?;
         self.socket.write_all(node_name.as_bytes()).await?;
         self.socket.flush().await?;
 
         // Response.
-        if self.socket.read_u8().await? != TAG_PORT2_RESP {
-            return Err(EpmdError::UnexpectedTag);
+        let tag = self.socket.read_u8().await?;
+        if tag != TAG_PORT2_RESP {
+            return Err(EpmdError::UnknownResponseTag {
+                request: "NAMES_REQ",
+                tag,
+            });
         }
 
         match self.socket.read_u8().await? {
@@ -318,10 +343,6 @@ where
         let info = self.socket.read_string().await?;
         Ok(info)
     }
-
-    pub fn socket(&self) -> &T {
-        self.socket.get_ref()
-    }
 }
 
 #[cfg(test)]
@@ -373,11 +394,10 @@ mod tests {
 
             // Register a new node.
             let client = epmd_client().await;
-            let port = client.socket().local_addr().unwrap().port();
             let new_node_name = "erl_dist_test_new_node";
             let new_node = NodeInfo {
                 name: new_node_name.to_owned(),
-                port,
+                port: 3000,
                 node_type: NodeType::Hidden,
                 protocol: Protocol::TcpIpV4,
                 highest_version: 6,

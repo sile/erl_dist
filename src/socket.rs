@@ -15,10 +15,6 @@ where
         Self { inner }
     }
 
-    pub fn get_ref(&self) -> &T {
-        &self.inner
-    }
-
     pub fn into_inner(self) -> T {
         self.inner
     }

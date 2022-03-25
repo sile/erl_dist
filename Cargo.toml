@@ -16,7 +16,6 @@ futures = "0.3"
 thiserror = "1"
 
 eetf = "0.7"
-handy_async = "0.2"
 md5 = "0.7"
 rand = "0.8"
 bitflags = "1"
