@@ -23,12 +23,12 @@ const TAG_ALIVE2_RESP: u8 = 121;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
 #[derive(Debug, Clone)]
-pub struct NodeName {
+pub struct NodeNameAndPort {
     pub name: String,
     pub port: u16,
 }
 
-impl FromStr for NodeName {
+impl FromStr for NodeNameAndPort {
     type Err = EpmdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -218,7 +218,7 @@ where
     }
 
     /// Gets all registered names from EPMD.
-    pub async fn get_names(mut self) -> Result<Vec<NodeName>, EpmdError> {
+    pub async fn get_names(mut self) -> Result<Vec<NodeNameAndPort>, EpmdError> {
         // Request.
         self.socket.write_u16(1).await?; // Length
         self.socket.write_u8(TAG_NAMES_REQ).await?;
@@ -231,7 +231,7 @@ where
         node_info_text
             .split('\n')
             .filter(|s| !s.is_empty())
-            .map(NodeName::from_str)
+            .map(NodeNameAndPort::from_str)
             .collect()
     }
 
@@ -317,5 +317,96 @@ where
         let _epmd_port = self.socket.read_u32().await?;
         let info = self.socket.read_string().await?;
         Ok(info)
+    }
+
+    pub fn socket(&self) -> &T {
+        self.socket.get_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::{Child, Command};
+
+    #[derive(Debug)]
+    struct TestErlangNode {
+        child: Child,
+    }
+
+    impl TestErlangNode {
+        fn new(name: &str) -> std::io::Result<Self> {
+            let child = Command::new("erl")
+                .args(&["-sname", name, "-noshell"])
+                .spawn()?;
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            Ok(Self { child })
+        }
+    }
+
+    impl Drop for TestErlangNode {
+        fn drop(&mut self) {
+            let _ = self.child.kill();
+        }
+    }
+
+    async fn epmd_client() -> EpmdClient<smol::net::TcpStream> {
+        let stream = smol::net::TcpStream::connect(("127.0.0.1", DEFAULT_EPMD_PORT))
+            .await
+            .unwrap();
+        EpmdClient::new(stream)
+    }
+
+    #[test]
+    fn epmd_client_works() {
+        let node_name = "erl_dist_test";
+        let erl_node = TestErlangNode::new(node_name).expect("failed to run a test erlang node");
+        smol::block_on(async {
+            // Get the information of an existing Erlang node.
+            let info = epmd_client()
+                .await
+                .get_node_info(node_name)
+                .await
+                .expect("failed to get node info");
+            let info = info.expect("no such node");
+            assert_eq!(info.name, node_name);
+
+            // Register a new node.
+            let client = epmd_client().await;
+            let port = client.socket().local_addr().unwrap().port();
+            let new_node_name = "erl_dist_test_new_node";
+            let new_node = NodeInfo {
+                name: new_node_name.to_owned(),
+                port,
+                node_type: NodeType::Hidden,
+                protocol: Protocol::TcpIpV4,
+                highest_version: 6,
+                lowest_version: 5,
+                extra: Vec::new(),
+            };
+            let (stream, _creation) = client
+                .register(new_node)
+                .await
+                .expect("failed to register a new node");
+
+            // Get the information of the newly added Erlang node.
+            let info = epmd_client()
+                .await
+                .get_node_info(new_node_name)
+                .await
+                .expect("failed to get node info");
+            let info = info.expect("no such node");
+            assert_eq!(info.name, new_node_name);
+
+            // Deregister the node.
+            std::mem::drop(stream);
+            let info = epmd_client()
+                .await
+                .get_node_info(new_node_name)
+                .await
+                .expect("failed to get node info");
+            assert!(info.is_none());
+        });
+        std::mem::drop(erl_node);
     }
 }
