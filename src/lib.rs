@@ -6,10 +6,8 @@
 //!
 //! # Examples
 //!
-//! - Client Node Example: [send_msg.rs]
-//!                        (https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
-//! - Server Node Example: [recv_msg.rs]
-//!                        (https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
+//! - Client Node Example: [send_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
+//! - Server Node Example: [recv_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
 // #![warn(missing_docs)]
 
 // #[macro_use]
@@ -28,50 +26,25 @@
 
 // pub mod channel;
 pub mod epmd;
-// pub mod handshake;
+pub mod handshake;
 // pub mod message;
 
 mod socket;
 
-// #[derive(Debug, Clone, Copy,PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// The generation number of a distributed node.
+///
+/// If a node restarts, the count will be incremented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Creation(u32);
 
 impl Creation {
+    /// Makes a new [`Creation`] instance.
     pub const fn new(n: u32) -> Self {
         Self(n)
     }
 
+    /// Gets the value.
     pub const fn get(self) -> u32 {
         self.0
     }
 }
-
-// /// The generation number of a distributed node.
-// ///
-// /// If a node restarts, the count will be incremented.
-// ///
-// /// Note the counter will wrap around, if it exceeds four.
-// #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// pub struct Creation(u8);
-// impl Creation {
-//     fn from_u16(c: u16) -> Option<Self> {
-//         if c < 4 {
-//             Some(Creation(c as u8))
-//         } else {
-//             None
-//         }
-//     }
-
-//     /// Returns the inner counter value of this `Creation`.
-//     ///
-//     /// The range of this value is limited to `0..4`.
-//     pub fn as_u8(&self) -> u8 {
-//         self.0
-//     }
-// }
-
-// #[cfg(test)]
-// mod tests {
-//     #[test]
-//     fn it_works() {}
-// }
