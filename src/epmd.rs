@@ -50,6 +50,30 @@ impl FromStr for NodeNameAndPort {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum HandshakeProtocolVersion {
+    V5 = 5,
+    V6 = 6,
+}
+
+impl std::fmt::Display for HandshakeProtocolVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", *self as u16)
+    }
+}
+
+impl TryFrom<u16> for HandshakeProtocolVersion {
+    type Error = EpmdError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            5 => Ok(Self::V5),
+            6 => Ok(Self::V6),
+            _ => Err(EpmdError::UnknownVersion { value }),
+        }
+    }
+}
+
 /// Type of a distributed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -73,6 +97,7 @@ impl TryFrom<u8> for NodeType {
     }
 }
 
+// TODO: rename
 /// Protocol for communicating with a distributed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Protocol {
@@ -106,15 +131,8 @@ pub struct NodeInfo {
     /// The protocol for communicating with the node.
     pub protocol: Protocol,
 
-    /// The highest distribution version that this node can handle.
-    ///
-    /// The value in Erlang/OTP R6B and later is 5.
-    pub highest_version: u16,
-
-    /// The lowest distribution version that this node can handle.
-    ///
-    /// The value in Erlang/OTP R6B and later is 5.
-    pub lowest_version: u16,
+    pub highest_version: HandshakeProtocolVersion,
+    pub lowest_version: HandshakeProtocolVersion,
 
     /// Extra field.
     pub extra: Vec<u8>,
@@ -149,6 +167,10 @@ pub enum EpmdError {
     #[error("unknown protocol {value}")]
     UnknownProtocol { value: u8 },
 
+    /// Unknown distribution protocol version.
+    #[error("unknown distribution protocol version {value}")]
+    UnknownVersion { value: u16 },
+
     /// Too long request.
     #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
     TooLongRequest { size: usize },
@@ -162,7 +184,7 @@ pub enum EpmdError {
     RegisterNodeError { code: u8 },
 
     /// Malformed NAMES_RESP line.
-    #[error("found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:}")]
+    #[error("found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}")]
     MalformedNodeNameAndPortLine { line: String },
 
     /// I/O error.
@@ -202,8 +224,8 @@ where
         self.socket.write_u16(node.port).await?;
         self.socket.write_u8(node.node_type as u8).await?;
         self.socket.write_u8(node.protocol as u8).await?;
-        self.socket.write_u16(node.highest_version).await?;
-        self.socket.write_u16(node.lowest_version).await?;
+        self.socket.write_u16(node.highest_version as u16).await?;
+        self.socket.write_u16(node.lowest_version as u16).await?;
         self.socket.write_u16(node.name.len() as u16).await?;
         self.socket.write_all(node.name.as_bytes()).await?;
         self.socket.write_u16(node.extra.len() as u16).await?;
@@ -291,8 +313,8 @@ where
             port: self.socket.read_u16().await?,
             node_type: NodeType::try_from(self.socket.read_u8().await?)?,
             protocol: Protocol::try_from(self.socket.read_u8().await?)?,
-            highest_version: self.socket.read_u16().await?,
-            lowest_version: self.socket.read_u16().await?,
+            highest_version: self.socket.read_u16().await?.try_into()?,
+            lowest_version: self.socket.read_u16().await?.try_into()?,
             name: self.socket.read_u16_string().await?,
             extra: self.socket.read_u16_bytes().await?,
         }))
