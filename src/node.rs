@@ -7,7 +7,7 @@ pub enum NodeNameError {
     MissingAtmark,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NodeName {
     name: String,
     host: String,

@@ -68,9 +68,10 @@ fn main() -> anyhow::Result<()> {
             self_node,
             creation,
             erl_dist::handshake::DistributionFlags::default(),
+            &args.cookie,
         );
-        handshake.connect(peer_node, stream).await?;
-        println!("Handshake finished");
+        let peer_info = handshake.connect(peer_node, stream).await?;
+        println!("Handshake finished: peer={:?}", peer_info);
 
         std::mem::drop(keepalive_socket);
         Ok(())

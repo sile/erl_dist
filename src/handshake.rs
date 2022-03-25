@@ -6,6 +6,7 @@
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
 use crate::epmd::{HandshakeProtocolVersion, NodeInfo};
+use crate::node::NodeName;
 use crate::socket::Socket;
 use crate::Creation;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -14,11 +15,28 @@ pub use self::flags::DistributionFlags;
 
 mod flags;
 
-#[derive(Debug)]
-pub struct Challenge(u32); // TODO: private
+#[derive(Debug, Clone)]
+pub struct PeerInfo {
+    name: NodeName,
+    flags: DistributionFlags,
+    creation: Option<Creation>,
+}
 
-#[derive(Debug)]
-pub struct Digest([u8; 16]); // TODO: private
+#[derive(Debug, Clone, Copy)]
+struct Challenge(u32);
+
+impl Challenge {
+    fn new() -> Self {
+        Self(rand::random())
+    }
+
+    fn digest(self, cookie: &str) -> Digest {
+        Digest(md5::compute(&format!("{}{}", cookie, self.0)).0)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Digest([u8; 16]);
 
 #[derive(Debug, thiserror::Error)]
 pub enum HandshakeError {
@@ -30,6 +48,27 @@ pub enum HandshakeError {
         peer_lowest: HandshakeProtocolVersion,
     },
 
+    #[error("peer already has an ongoing handshake with this node")]
+    OngoingHandshake,
+
+    #[error("the connection is disallowed for some (unspecified) security reason")]
+    NotAllowed,
+
+    #[error("a connection to the node is already active")]
+    AlreadyActive,
+
+    #[error("received an unknown status {status:?}")]
+    UnknownStatus { status: String },
+
+    #[error("received an unexpected tag {tag} for {message:?}")]
+    UnexpectedTag { message: &'static str, tag: u8 },
+
+    #[error("invalid digest value (maybe cookie mismatch)")]
+    InvalidDigest,
+
+    #[error(transparent)]
+    NodeNameError(#[from] crate::node::NodeNameError),
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -39,18 +78,29 @@ pub struct Handshake {
     self_node: NodeInfo,
     creation: Creation,
     flags: DistributionFlags,
+    cookie: String,
 }
 
 impl Handshake {
-    pub fn new(self_node: NodeInfo, creation: Creation, flags: DistributionFlags) -> Self {
+    pub fn new(
+        self_node: NodeInfo,
+        creation: Creation,
+        flags: DistributionFlags,
+        cookie: &str,
+    ) -> Self {
         Self {
             self_node,
             creation,
             flags,
+            cookie: cookie.to_owned(),
         }
     }
 
-    pub async fn connect<T>(self, peer_node: NodeInfo, socket: T) -> Result<(), HandshakeError>
+    pub async fn connect<T>(
+        self,
+        peer_node: NodeInfo,
+        socket: T,
+    ) -> Result<PeerInfo, HandshakeError>
     where
         T: AsyncRead + AsyncWrite + Unpin,
     {
@@ -63,6 +113,7 @@ impl Handshake {
             this: self.self_node,
             flags: self.flags,
             creation: self.creation,
+            cookie: self.cookie,
         };
         client.connect().await
     }
@@ -103,17 +154,129 @@ struct HandshakeClient<T> {
     peer: NodeInfo,
     flags: DistributionFlags,
     creation: Creation,
+    cookie: String,
 }
 
 impl<T> HandshakeClient<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn connect(mut self) -> Result<(), HandshakeError> {
+    async fn connect(mut self) -> Result<PeerInfo, HandshakeError> {
         self.send_name().await?;
+
         let status = self.recv_status().await?;
-        dbg!(status);
-        todo!()
+        match status.as_str() {
+            "ok" | "ok_simultaneous" => {}
+            "nok" => {
+                return Err(HandshakeError::OngoingHandshake);
+            }
+            "not_allowed" => {
+                return Err(HandshakeError::NotAllowed);
+            }
+            "alive" => {
+                // TODO: Add an option to send "true" instead.
+                self.send_status("false").await?;
+                return Err(HandshakeError::AlreadyActive);
+            }
+            "named" => {
+                todo!();
+            }
+            _ => {
+                return Err(HandshakeError::UnknownStatus { status });
+            }
+        }
+
+        let (peer_name, peer_flags, peer_challenge, peer_creation) = self.recv_challenge().await?;
+        if self.version == HandshakeProtocolVersion::V5 && peer_creation.is_some() {
+            self.send_complement().await?;
+        }
+
+        let self_challenge = Challenge::new();
+        self.send_challenge_reply(self_challenge, peer_challenge)
+            .await?;
+
+        self.recv_challenge_ack(self_challenge).await?;
+
+        Ok(PeerInfo {
+            name: peer_name,
+            flags: peer_flags,
+            creation: peer_creation,
+        })
+    }
+
+    async fn recv_challenge_ack(
+        &mut self,
+        self_challenge: Challenge,
+    ) -> Result<(), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        if tag != b'a' {
+            return Err(HandshakeError::UnexpectedTag {
+                message: "recv_challenge_ack",
+                tag,
+            });
+        }
+
+        let mut digest = [0; 16];
+        reader.read_exact(&mut digest).await?;
+        if digest != self_challenge.digest(&self.cookie).0 {
+            return Err(HandshakeError::InvalidDigest);
+        }
+
+        Ok(())
+    }
+
+    async fn send_challenge_reply(
+        &mut self,
+        self_challenge: Challenge,
+        peer_challenge: Challenge,
+    ) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b'r')?;
+        writer.write_u32(self_challenge.0)?;
+        writer.write_all(&peer_challenge.digest(&self.cookie).0)?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn send_complement(&mut self) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b'c')?;
+        writer.write_u32((self.flags.bits() >> 32) as u32)?;
+        writer.write_u32(self.creation.get())?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn recv_challenge(
+        &mut self,
+    ) -> Result<(NodeName, DistributionFlags, Challenge, Option<Creation>), HandshakeError> {
+        // TODO: version and flag check
+        let mut reader = self.socket.message_reader().await?;
+        match reader.read_u8().await? {
+            b'n' => {
+                let version = reader.read_u16().await?;
+                assert_eq!(version, 5); // TODO
+                let flags =
+                    DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?)); // TODO
+                let challenge = Challenge(reader.read_u32().await?);
+                let name = reader.read_string().await?.parse()?;
+                Ok((name, flags, challenge, None))
+            }
+            b'N' => {
+                let flags =
+                    DistributionFlags::from_bits_truncate(u64::from(reader.read_u64().await?)); // TODO
+                let challenge = Challenge(reader.read_u32().await?);
+                let creation = Creation::new(reader.read_u32().await?);
+                let name = reader.read_u16_string().await?.parse()?;
+                reader.consume_remaining_bytes().await?;
+                Ok((name, flags, challenge, Some(creation)))
+            }
+            tag => Err(HandshakeError::UnexpectedTag {
+                message: "recv_challenge",
+                tag,
+            }),
+        }
     }
 
     async fn send_name(&mut self) -> Result<(), HandshakeError> {
@@ -134,6 +297,13 @@ where
             }
         }
         writer.finish().await?;
+        Ok(())
+    }
+
+    async fn send_status(&mut self, status: &str) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b's')?;
+        writer.write_all(status.as_bytes())?;
         Ok(())
     }
 
@@ -478,12 +648,4 @@ where
 //             Err(e)
 //         }
 //     }
-// }
-
-// fn with_len<P: ExternalSize>(pattern: P) -> (BE<u16>, P) {
-//     ((pattern.external_size() as u16).be(), pattern)
-// }
-
-// fn calc_digest(cookie: &str, challenge: u32) -> [u8; 16] {
-//     md5::compute(&format!("{}{}", cookie, challenge)).0
 // }

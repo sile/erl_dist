@@ -57,10 +57,54 @@ where
         self.socket.read_u8().await
     }
 
+    pub async fn read_u16(&mut self) -> std::io::Result<u16> {
+        self.size = self.size.checked_sub(2).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof")
+        })?;
+        self.socket.read_u16().await
+    }
+
+    pub async fn read_u32(&mut self) -> std::io::Result<u32> {
+        self.size = self.size.checked_sub(4).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof")
+        })?;
+        self.socket.read_u32().await
+    }
+
+    pub async fn read_u64(&mut self) -> std::io::Result<u64> {
+        self.size = self.size.checked_sub(8).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof")
+        })?;
+        self.socket.read_u64().await
+    }
+
     pub async fn read_string(&mut self) -> std::io::Result<String> {
         let n = self.size;
         self.size = 0;
         self.socket.read_stringn(n).await
+    }
+
+    pub async fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        let n = buf.len();
+        self.size = self.size.checked_sub(n).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof")
+        })?;
+        self.socket.read_exact(buf).await
+    }
+
+    pub async fn read_u16_string(&mut self) -> std::io::Result<String> {
+        let n = self.read_u16().await? as usize;
+        self.size = self.size.checked_sub(n).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof")
+        })?;
+        self.socket.read_stringn(n).await
+    }
+
+    pub async fn consume_remaining_bytes(&mut self) -> std::io::Result<()> {
+        let mut buf = vec![0; self.size];
+        self.size = 0;
+        self.socket.read_exact(&mut buf).await?;
+        Ok(())
     }
 }
 
@@ -148,6 +192,16 @@ where
         let mut buf = [0; 4];
         self.inner.read_exact(&mut buf).await?;
         Ok(BigEndian::read_u32(&buf))
+    }
+
+    pub async fn read_u64(&mut self) -> std::io::Result<u64> {
+        let mut buf = [0; 8];
+        self.inner.read_exact(&mut buf).await?;
+        Ok(BigEndian::read_u64(&buf))
+    }
+
+    pub async fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        self.inner.read_exact(buf).await
     }
 
     pub async fn read_string(&mut self) -> std::io::Result<String> {
