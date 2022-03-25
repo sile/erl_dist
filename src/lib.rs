@@ -31,6 +31,8 @@ pub mod epmd;
 // pub mod handshake;
 // pub mod message;
 
+mod socket;
+
 // #[derive(Debug, Clone, Copy,PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Creation(u32);
 
