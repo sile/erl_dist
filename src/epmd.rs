@@ -118,6 +118,36 @@ impl TryFrom<u8> for Protocol {
     }
 }
 
+#[derive(Debug)]
+pub struct NodeInfoBuilder {
+    node: NodeInfo,
+}
+
+impl NodeInfoBuilder {
+    pub fn new(name: &str, port: u16) -> Self {
+        Self {
+            node: NodeInfo {
+                name: name.to_owned(),
+                port,
+                node_type: NodeType::Normal,
+                protocol: Protocol::TcpIpV4,
+                highest_version: HandshakeProtocolVersion::V6,
+                lowest_version: HandshakeProtocolVersion::V5,
+                extra: Vec::new(),
+            },
+        }
+    }
+
+    pub fn hidden(mut self) -> Self {
+        self.node.node_type = NodeType::Hidden;
+        self
+    }
+
+    pub fn build(self) -> NodeInfo {
+        self.node
+    }
+}
+
 /// Node information.
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
@@ -424,8 +454,8 @@ mod tests {
                 port: 3000,
                 node_type: NodeType::Hidden,
                 protocol: Protocol::TcpIpV4,
-                highest_version: 6,
-                lowest_version: 5,
+                highest_version: HandshakeProtocolVersion::V6,
+                lowest_version: HandshakeProtocolVersion::V5,
                 extra: Vec::new(),
             };
             let (stream, _creation) = client

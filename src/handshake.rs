@@ -10,7 +10,9 @@ use crate::socket::Socket;
 use crate::Creation;
 use futures::io::{AsyncRead, AsyncWrite};
 
-pub mod flags;
+pub use self::flags::DistributionFlags;
+
+mod flags;
 
 #[derive(Debug)]
 pub struct Challenge(u32); // TODO: private
@@ -36,13 +38,15 @@ pub enum HandshakeError {
 pub struct Handshake {
     self_node: NodeInfo,
     creation: Creation,
+    flags: DistributionFlags,
 }
 
 impl Handshake {
-    pub fn new(self_node: NodeInfo, creation: Creation) -> Self {
+    pub fn new(self_node: NodeInfo, creation: Creation, flags: DistributionFlags) -> Self {
         Self {
             self_node,
             creation,
+            flags,
         }
     }
 
@@ -50,13 +54,15 @@ impl Handshake {
     where
         T: AsyncRead + AsyncWrite + Unpin,
     {
-        let mut socket = Socket::new(socket);
+        let socket = Socket::new(socket);
         let version = self.check_available_highest_version(&peer_node)?;
         let client = HandshakeClient {
             socket,
             version,
             peer: peer_node,
             this: self.self_node,
+            flags: self.flags,
+            creation: self.creation,
         };
         client.connect().await
     }
@@ -95,6 +101,8 @@ struct HandshakeClient<T> {
     version: HandshakeProtocolVersion,
     this: NodeInfo,
     peer: NodeInfo,
+    flags: DistributionFlags,
+    creation: Creation,
 }
 
 impl<T> HandshakeClient<T>
@@ -103,21 +111,40 @@ where
 {
     async fn connect(mut self) -> Result<(), HandshakeError> {
         self.send_name().await?;
+        let status = self.recv_status().await?;
+        dbg!(status);
         todo!()
     }
 
     async fn send_name(&mut self) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
         match self.version {
             HandshakeProtocolVersion::V5 => {
-                self.socket.write_u8(b'n').await?;
-                self.socket.write_u16(self.version as u16).await?;
+                writer.write_u8(b'n')?;
+                writer.write_u16(self.version as u16)?;
+                writer.write_u32(self.flags.bits() as u32)?;
+                writer.write_all(self.this.name.as_bytes())?;
             }
             HandshakeProtocolVersion::V6 => {
-                self.socket.write_u8(b'N').await?;
+                writer.write_u8(b'N')?;
+                writer.write_u64(self.flags.bits())?;
+                writer.write_u32(self.creation.get())?;
+                writer.write_u16(self.this.name.len() as u16)?; // TODO: validation
+                writer.write_all(self.this.name.as_bytes())?;
             }
         }
-        self.socket.flush().await?;
+        writer.finish().await?;
         Ok(())
+    }
+
+    async fn recv_status(&mut self) -> Result<String, HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        if tag != b's' {
+            todo!();
+        }
+        let status = reader.read_string().await?;
+        Ok(status)
     }
 }
 

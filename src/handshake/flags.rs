@@ -1,4 +1,5 @@
 bitflags::bitflags! {
+    // capability flags
     /// Distribution flags.
     pub struct DistributionFlags: u64 {
         /// The node is to be published and part of the global namespace.
@@ -151,5 +152,7 @@ impl Default for DistributionFlags {
             | Self::DFLAG_SMALL_ATOM_TAGS
             | Self::DFLAG_UTF8_ATOMS
             | Self::DFLAG_MAP_TAGS
+            | Self::DFLAG_HANDSHAKE_23
+            | Self::DFLAG_BIG_CREATION
     }
 }

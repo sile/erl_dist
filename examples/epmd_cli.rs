@@ -8,7 +8,7 @@
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
 use clap::{Parser, Subcommand};
-use erl_dist::epmd::{EpmdClient, NodeInfo, NodeType, Protocol};
+use erl_dist::epmd::{EpmdClient, HandshakeProtocolVersion, NodeInfo, NodeType, Protocol};
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -39,12 +39,6 @@ enum Command {
 
         #[clap(long)]
         hidden: bool,
-
-        #[clap(long, default_value_t = 6)]
-        highest_version: u16,
-
-        #[clap(long, default_value_t = 5)]
-        lowest_version: u16,
     },
 }
 
@@ -74,8 +68,8 @@ fn main() -> anyhow::Result<()> {
                         "port": info.port,
                         "node_type": format!("{:?} ({})", info.node_type, info.node_type as u8),
                         "protocol": format!("{:?} ({})", info.protocol, info.protocol as u8),
-                        "highest_version": info.highest_version,
-                        "lowest_version": info.lowest_version,
+                        "highest_version": info.highest_version as u16,
+                        "lowest_version": info.lowest_version as u16,
                         "extra": info.extra
                     });
                     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -94,13 +88,7 @@ fn main() -> anyhow::Result<()> {
                 let result = serde_json::json!({ "result": result });
                 println!("{}", serde_json::to_string_pretty(&result)?);
             }
-            Command::Register {
-                name,
-                port,
-                hidden,
-                highest_version,
-                lowest_version,
-            } => {
+            Command::Register { name, port, hidden } => {
                 // 'ALIVE2_REQ'
                 let node = NodeInfo {
                     name: name.to_string(),
@@ -111,8 +99,8 @@ fn main() -> anyhow::Result<()> {
                         NodeType::Normal
                     },
                     protocol: Protocol::TcpIpV4,
-                    highest_version,
-                    lowest_version,
+                    highest_version: HandshakeProtocolVersion::V6,
+                    lowest_version: HandshakeProtocolVersion::V5,
                     extra: Vec::new(),
                 };
                 let (_, creation) = client.register(node).await?;

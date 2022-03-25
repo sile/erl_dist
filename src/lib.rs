@@ -27,6 +27,7 @@
 // pub mod channel;
 pub mod epmd;
 pub mod handshake;
+pub mod node;
 // pub mod message;
 
 mod socket;
