@@ -64,10 +64,12 @@ fn main() -> anyhow::Result<()> {
                 .hidden()
                 .build();
 
+        let mut self_node_for_epmd = self_node.clone(); // TODO
+        self_node_for_epmd.name = args.self_node.name().to_owned();
         let (keepalive_socket, creation) = args
             .local_epmd_client()
             .await?
-            .register(self_node.clone())
+            .register(self_node_for_epmd)
             .await?;
         println!("Registered self node: creation={:?}", creation);
 

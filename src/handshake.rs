@@ -118,12 +118,20 @@ impl Handshake {
         client.connect().await
     }
 
-    // pub async fn accept<T>(&self, socket: T)
-    // where
-    //     T: AsyncRead + AsyncWrite + Unpin,
-    // {
-    //     let socket = Socket::new(socket);
-    // }
+    pub async fn accept<T>(self, socket: T) -> Result<(T, PeerInfo), HandshakeError>
+    where
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
+        let socket = Socket::new(socket);
+        let server = HandshakeServer {
+            socket,
+            this: self.self_node,
+            flags: self.flags,
+            creation: self.creation,
+            cookie: self.cookie,
+        };
+        server.accept().await
+    }
 
     fn check_available_highest_version(
         &self,
@@ -143,6 +151,24 @@ impl Handshake {
                 peer_lowest: peer_node.lowest_version,
             })
         }
+    }
+}
+
+#[derive(Debug)]
+struct HandshakeServer<T> {
+    socket: Socket<T>,
+    this: NodeInfo,
+    flags: DistributionFlags,
+    creation: Creation,
+    cookie: String,
+}
+
+impl<T> HandshakeServer<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    async fn accept(mut self) -> Result<(T, PeerInfo), HandshakeError> {
+        todo!()
     }
 }
 
