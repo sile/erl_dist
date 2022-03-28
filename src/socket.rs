@@ -148,12 +148,11 @@ where
         self.inner.write_all(&buf).await
     }
 
-    // TODO: remove
-    // pub async fn write_u32(&mut self, v: u32) -> std::io::Result<()> {
-    //     let mut buf = [0; 4];
-    //     BigEndian::write_u32(&mut buf, v);
-    //     self.inner.write_all(&buf).await
-    // }
+    pub async fn write_u32(&mut self, v: u32) -> std::io::Result<()> {
+        let mut buf = [0; 4];
+        BigEndian::write_u32(&mut buf, v);
+        self.inner.write_all(&buf).await
+    }
 
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         self.inner.write_all(buf).await

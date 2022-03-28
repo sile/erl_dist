@@ -17,9 +17,9 @@ mod flags;
 
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
-    name: NodeName,
-    flags: DistributionFlags,
-    creation: Option<Creation>,
+    pub name: NodeName,
+    pub flags: DistributionFlags,
+    pub creation: Option<Creation>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,7 +100,7 @@ impl Handshake {
         self,
         peer_node: NodeInfo,
         socket: T,
-    ) -> Result<PeerInfo, HandshakeError>
+    ) -> Result<(T, PeerInfo), HandshakeError>
     where
         T: AsyncRead + AsyncWrite + Unpin,
     {
@@ -118,12 +118,12 @@ impl Handshake {
         client.connect().await
     }
 
-    pub async fn accept<T>(&self, socket: T)
-    where
-        T: AsyncRead + AsyncWrite + Unpin,
-    {
-        let socket = Socket::new(socket);
-    }
+    // pub async fn accept<T>(&self, socket: T)
+    // where
+    //     T: AsyncRead + AsyncWrite + Unpin,
+    // {
+    //     let socket = Socket::new(socket);
+    // }
 
     fn check_available_highest_version(
         &self,
@@ -161,7 +161,7 @@ impl<T> HandshakeClient<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn connect(mut self) -> Result<PeerInfo, HandshakeError> {
+    async fn connect(mut self) -> Result<(T, PeerInfo), HandshakeError> {
         self.send_name().await?;
 
         let status = self.recv_status().await?;
@@ -197,11 +197,12 @@ where
 
         self.recv_challenge_ack(self_challenge).await?;
 
-        Ok(PeerInfo {
+        let peer_info = PeerInfo {
             name: peer_name,
             flags: peer_flags,
             creation: peer_creation,
-        })
+        };
+        Ok((self.socket.into_inner(), peer_info))
     }
 
     async fn recv_challenge_ack(

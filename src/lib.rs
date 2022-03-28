@@ -20,15 +20,15 @@
 //     };
 // }
 
-// pub use epmd::EpmdClient;
-// pub use handshake::Handshake;
 // pub use message::Message;
 
-// pub mod channel;
+// TODO: pub mod remote_node;
+
+pub mod channel;
 pub mod epmd;
 pub mod handshake;
+pub mod message;
 pub mod node;
-// pub mod message;
 
 mod socket;
 
