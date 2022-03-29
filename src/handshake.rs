@@ -35,7 +35,7 @@ impl Challenge {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Digest([u8; 16]);
 
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +65,9 @@ pub enum HandshakeError {
 
     #[error("invalid digest value (maybe cookie mismatch)")]
     InvalidDigest,
+
+    #[error("the 'version' value of an old 'send_name' message must be 5, but got {value}")]
+    InvalidVersionValue { value: u16 },
 
     #[error(transparent)]
     NodeNameError(#[from] crate::node::NodeNameError),
@@ -129,6 +132,7 @@ impl Handshake {
             flags: self.flags,
             creation: self.creation,
             cookie: self.cookie,
+            challenge: Challenge::new(),
         };
         server.accept().await
     }
@@ -161,6 +165,7 @@ struct HandshakeServer<T> {
     flags: DistributionFlags,
     creation: Creation,
     cookie: String,
+    challenge: Challenge,
 }
 
 impl<T> HandshakeServer<T>
@@ -168,7 +173,127 @@ where
     T: AsyncRead + AsyncWrite + Unpin,
 {
     async fn accept(mut self) -> Result<(T, PeerInfo), HandshakeError> {
-        todo!()
+        let (peer_name, mut flags, mut maybe_creation) = self.recv_name().await?;
+        self.send_status().await?;
+        self.send_challenge(flags).await?;
+        if flags.contains(DistributionFlags::DFLAG_HANDSHAKE_23) && maybe_creation.is_none() {
+            let (flags_high, creation) = self.recv_complement().await?;
+            maybe_creation = Some(creation);
+            flags |= flags_high;
+        }
+        let (challenge, digest) = self.recv_challenge_reply().await?;
+        if self.challenge.digest(&self.cookie) != digest {
+            return Err(HandshakeError::InvalidDigest);
+        }
+        self.send_challenge_ack(challenge).await?;
+
+        let stream = self.socket.into_inner();
+        let peer_info = PeerInfo {
+            name: peer_name.parse()?,
+            flags,
+            creation: maybe_creation,
+        };
+        Ok((stream, peer_info))
+    }
+
+    async fn send_challenge_ack(&mut self, challenge: Challenge) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b'a')?;
+        writer.write_all(&challenge.digest(&self.cookie).0)?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn recv_challenge_reply(&mut self) -> Result<(Challenge, Digest), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        if tag != b'r' {
+            return Err(HandshakeError::UnexpectedTag {
+                message: "challenge_reply",
+                tag,
+            });
+        }
+        let challenge = Challenge(reader.read_u32().await?);
+        let mut digest = Digest([0; 16]);
+        reader.read_exact(&mut digest.0).await?;
+        Ok((challenge, digest))
+    }
+
+    async fn recv_complement(&mut self) -> Result<(DistributionFlags, Creation), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        if tag != b'c' {
+            return Err(HandshakeError::UnexpectedTag {
+                message: "send_complement",
+                tag,
+            })?;
+        }
+        let flags_high =
+            DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?) << 32);
+        let creation = Creation::new(reader.read_u32().await?);
+        Ok((flags_high, creation))
+    }
+
+    async fn send_challenge(
+        &mut self,
+        peer_flags: DistributionFlags,
+    ) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        if peer_flags.contains(DistributionFlags::DFLAG_HANDSHAKE_23) {
+            writer.write_u8(b'N')?;
+            writer.write_u64(self.flags.bits())?;
+            writer.write_u32(self.challenge.0)?;
+            writer.write_u32(self.creation.get())?;
+            writer.write_u16(self.this.name.len() as u16)?; // TODO: validate
+            writer.write_all(self.this.name.as_bytes())?;
+        } else {
+            writer.write_u8(b'n')?;
+            writer.write_u16(5)?;
+            writer.write_u32(self.flags.bits() as u32)?;
+            writer.write_u32(self.challenge.0)?;
+            writer.write_all(self.this.name.as_bytes())?;
+        }
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn recv_name(
+        &mut self,
+    ) -> Result<(String, DistributionFlags, Option<Creation>), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        match tag {
+            b'n' => {
+                let version = reader.read_u16().await?;
+                if version != 5 {
+                    return Err(HandshakeError::InvalidVersionValue { value: version });
+                }
+                let flags =
+                    DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?));
+                let name = reader.read_string().await?;
+                Ok((name, flags, None))
+            }
+            b'N' => {
+                let flags = DistributionFlags::from_bits_truncate(reader.read_u64().await?);
+                let creation = Creation::new(reader.read_u32().await?);
+                let name = reader.read_u16_string().await?;
+                Ok((name, flags, Some(creation)))
+            }
+            _ => Err(HandshakeError::UnexpectedTag {
+                message: "send_name",
+                tag,
+            }),
+        }
+    }
+
+    async fn send_status(&mut self) -> Result<(), HandshakeError> {
+        // TODO: check flags
+        // TODO: check conflict
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b's')?;
+        writer.write_all(b"ok")?;
+        writer.finish().await?;
+        Ok(())
     }
 }
 
@@ -344,335 +469,3 @@ where
         Ok(status)
     }
 }
-
-// use futures::{self, Future};
-// use handy_async::io::{ExternalSize, ReadFrom, WriteInto};
-// use handy_async::pattern::combinators::BE;
-// use handy_async::pattern::read::{Utf8, U16, U32, U8};
-// use handy_async::pattern::{Buf, Endian, Pattern};
-// use md5;
-// use rand;
-// use std::io::{Error, ErrorKind, Read, Result, Write};
-
-// /// The distribution version this crate can handle.
-// pub const DISTRIBUTION_VERSION: u16 = 5;
-
-// const TAG_NAME: u8 = b'n';
-// const TAG_STATUS: u8 = b's';
-// const TAG_CHALLENGE: u8 = b'n';
-// const TAG_REPLY: u8 = b'r';
-// const TAG_ACK: u8 = b'a';
-
-// /// A structure that represents a connected peer node.
-// #[derive(Debug)]
-// pub struct Peer<S> {
-//     /// The name of this peer node.
-//     ///
-//     /// The format of the node name is `"${NAME}@${HOST}"`.
-//     pub name: String,
-
-//     /// The distribution flags of this peer.
-//     pub flags: DistributionFlags,
-
-//     /// The stream used to communicate with this peer.
-//     pub stream: S,
-// }
-// impl<S: Read> Read for Peer<S> {
-//     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-//         self.stream.read(buf)
-//     }
-// }
-// impl<S: Write> Write for Peer<S> {
-//     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-//         self.stream.write(buf)
-//     }
-//     fn flush(&mut self) -> Result<()> {
-//         self.stream.flush()
-//     }
-// }
-
-// /// Handshake object.
-// #[derive(Debug, Clone)]
-// pub struct Handshake {
-//     self_node_name: String,
-//     self_cookie: String,
-//     peer_cookie: String,
-//     flags: DistributionFlags,
-// }
-// impl Handshake {
-//     /// Makes a new Handshake object.
-//     ///
-//     /// The cookies for self and peer nodes are both set to `cookie`.
-//     ///
-//     /// The set of distribution flags the self node can recognize is
-//     /// set to `DistributionFlags::default()`.
-//     ///
-//     /// Note the format of `self_node_name` must be `"${NAME}@${NAME}"`.
-//     pub fn new(self_node_name: &str, cookie: &str) -> Self {
-//         Handshake {
-//             self_node_name: self_node_name.to_string(),
-//             self_cookie: cookie.to_string(),
-//             peer_cookie: cookie.to_string(),
-//             flags: DistributionFlags::default(),
-//         }
-//     }
-
-//     /// Sets the set of distribution flags this node can recognize to `flags`.
-//     pub fn flags(&mut self, flags: DistributionFlags) -> &mut Self {
-//         self.flags = flags;
-//         self
-//     }
-
-//     /// Sets the cookie of the self node to `cookie`.
-//     pub fn self_cookie(&mut self, cookie: &str) -> &mut Self {
-//         self.self_cookie = cookie.to_string();
-//         self
-//     }
-
-//     /// Sets the cookie of the peer node to `cookie`.
-//     pub fn peer_cookie(&mut self, cookie: &str) -> &mut Self {
-//         self.peer_cookie = cookie.to_string();
-//         self
-//     }
-
-//     /// Executes the client side handshake for connecting to the `peer` node.
-//     ///
-//     /// # Note
-//     ///
-//     /// For executing asynchronously, we assume that `peer` returns
-//     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-//     ///
-//     /// # Examples
-//     ///
-//     /// Connects to the "foo" node running on localhost at port `4000`:
-//     ///
-//     /// ```no_run
-//     /// use fibers::{Executor, InPlaceExecutor, Spawn};
-//     /// use fibers::net::TcpStream;
-//     /// use futures::Future;
-//     /// use erl_dist::Handshake;
-//     ///
-//     /// # fn main() {
-//     /// let peer_addr = "127.0.0.1:58312".parse().unwrap();
-//     /// let mut executor = InPlaceExecutor::new().unwrap();
-//     ///
-//     /// // Executes the client side handshake.
-//     /// let monitor = executor.spawn_monitor(
-//     ///     TcpStream::connect(peer_addr).and_then(|socket| {
-//     ///         let handshake = Handshake::new("bar@localhost", "erlang cookie");
-//     ///         handshake.connect(socket)
-//     ///     }));
-//     /// let peer = executor.run_fiber(monitor).unwrap().unwrap();
-//     ///
-//     /// assert_eq!(peer.name, "foo@localhost");
-//     /// println!("Flags: {:?}", peer.flags);
-//     /// # }
-//     /// ```
-//     ///
-//     /// See the files in the ["example" directory]
-//     /// (https://github.com/sile/erl_dist/tree/master/examples) for more examples.
-//     pub fn connect<S>(&self, peer: S) -> impl 'static + Future<Item = Peer<S>, Error = Error> + Send
-//     where
-//         S: Read + Write + Send + 'static,
-//     {
-//         let peer = Peer {
-//             stream: peer,
-//             name: String::new(),               // Dummy value
-//             flags: DistributionFlags::empty(), // Dummy value
-//         };
-//         let Handshake {
-//             self_node_name,
-//             self_cookie,
-//             peer_cookie,
-//             flags,
-//         } = self.clone();
-//         futures::finished(peer)
-//             .and_then(move |peer| {
-//                 // send_name
-//                 with_len((
-//                     TAG_NAME,
-//                     DISTRIBUTION_VERSION.be(),
-//                     flags.bits().be(),
-//                     self_node_name,
-//                 ))
-//                 .write_into(peer)
-//             })
-//             .and_then(|(peer, _)| {
-//                 // recv_status
-//                 let status = U16.be().and_then(|len| {
-//                     let status = Utf8(vec![0; len as usize - 1]).and_then(check_status);
-//                     (U8.expect_eq(TAG_STATUS), status)
-//                 });
-//                 status.read_from(peer)
-//             })
-//             .and_then(|(peer, _)| {
-//                 // recv_challenge
-//                 let challenge = U16.be().and_then(|len| {
-//                     let name = Utf8(vec![0; len as usize - 11]); // TODO: boundary check
-//                     (
-//                         U8.expect_eq(TAG_CHALLENGE),
-//                         U16.be().expect_eq(DISTRIBUTION_VERSION),
-//                         U32.be(),
-//                         U32.be(),
-//                         name,
-//                     )
-//                 });
-//                 challenge.read_from(peer)
-//             })
-//             .and_then(
-//                 move |(mut peer, (_, _, peer_flags, peer_challenge, peer_name))| {
-//                     // send_challenge_reply
-//                     peer.name = peer_name;
-//                     peer.flags = DistributionFlags::from_bits_truncate(peer_flags);
-
-//                     let peer_digest = calc_digest(&peer_cookie, peer_challenge);
-//                     let self_challenge = rand::random::<u32>();
-//                     let self_digest = calc_digest(&self_cookie, self_challenge);
-
-//                     let reply = with_len((TAG_REPLY, self_challenge.be(), Buf(peer_digest)))
-//                         .map(move |_| self_digest);
-//                     reply.write_into(peer)
-//                 },
-//             )
-//             .and_then(|(peer, self_digest)| {
-//                 // recv_challenge_ack
-//                 let digest = Buf([0; 16]).expect_eq(self_digest);
-//                 let ack = (U16.be().expect_eq(17), U8.expect_eq(TAG_ACK), digest);
-//                 ack.read_from(peer)
-//             })
-//             .map(|(peer, _)| peer)
-//             .map_err(|e| e.into_error())
-//     }
-
-//     /// Executes the server side handshake to accept the node connected by the `peer` stream.
-//     ///
-//     /// # Note
-//     ///
-//     /// For executing asynchronously, we assume that `peer` returns
-//     /// the `std::io::ErrorKind::WouldBlock` error if an I/O operation would be about to block.
-//     ///
-//     /// # Examples
-//     ///
-//     /// ```no_run
-//     /// use fibers::net::TcpListener;
-//     /// use fibers::{Executor, InPlaceExecutor, Spawn};
-//     /// use futures::{Future, Stream};
-//     /// use erl_dist::Handshake;
-//     ///
-//     /// # fn main() {
-//     /// let mut executor = InPlaceExecutor::new().unwrap();
-//     /// let handle = executor.handle();
-//     /// let monitor =
-//     ///     executor.spawn_monitor(TcpListener::bind("127.0.0.1:4000".parse().unwrap())
-//     ///         .and_then(|listener| {
-//     ///             listener.incoming().for_each(move |(peer, _)| {
-//     ///                 handle.spawn(peer.and_then(|peer| {
-//     ///                         let handshake = Handshake::new("foo@localhost", "erlang cookie");
-//     ///                         handshake.accept(peer).and_then(|peer| {
-//     ///                             println!("CONNECTED: {}", peer.name);
-//     ///                             Ok(())
-//     ///                         })
-//     ///                     })
-//     ///                     .then(|_| Ok(())));
-//     ///                 Ok(())
-//     ///             })
-//     ///         }));
-//     /// let _ = executor.run_fiber(monitor).unwrap().unwrap();
-//     /// # }
-//     /// ```
-//     ///
-//     /// See the [recv_msg.rs]
-//     /// (https://github.com/sile/erl_dist/tree/master/examples/recv_msg.rs)
-//     /// file for a running example.
-//     pub fn accept<S>(&self, peer: S) -> impl 'static + Future<Item = Peer<S>, Error = Error> + Send
-//     where
-//         S: Read + Write + Send + 'static,
-//     {
-//         let peer = Peer {
-//             stream: peer,
-//             name: String::new(),               // Dummy value
-//             flags: DistributionFlags::empty(), // Dummy value
-//         };
-//         let Handshake {
-//             self_node_name,
-//             self_cookie,
-//             peer_cookie,
-//             flags,
-//         } = self.clone();
-//         futures::finished(peer)
-//             .and_then(|peer| {
-//                 // recv_name
-//                 let recv_name = U16.be().and_then(|len| {
-//                     let peer_name = Utf8(vec![0; len as usize - 7]);
-//                     (
-//                         U8.expect_eq(TAG_NAME),
-//                         U16.be().expect_eq(DISTRIBUTION_VERSION),
-//                         U32.be(),
-//                         peer_name,
-//                     )
-//                 });
-//                 recv_name.read_from(peer)
-//             })
-//             .and_then(move |(mut peer, (_, _, peer_flags, peer_name))| {
-//                 // send_status
-//                 let peer_flags = DistributionFlags::from_bits_truncate(peer_flags);
-//                 let acceptable_flags = flags & peer_flags;
-//                 peer.name = peer_name;
-//                 peer.flags = acceptable_flags;
-
-//                 // TODO: Handle conflictions
-//                 let status = (TAG_STATUS, "ok".to_string());
-//                 with_len(status).write_into(peer)
-//             })
-//             .and_then(move |(peer, _)| {
-//                 // send_challenge
-//                 let self_challenge = rand::random::<u32>();
-//                 let self_digest = calc_digest(&self_cookie, self_challenge);
-//                 let challenge = (
-//                     TAG_CHALLENGE,
-//                     DISTRIBUTION_VERSION.be(),
-//                     peer.flags.bits().be(),
-//                     self_challenge.be(),
-//                     self_node_name,
-//                 );
-//                 with_len(challenge)
-//                     .map(move |_| self_digest)
-//                     .write_into(peer)
-//             })
-//             .and_then(|(peer, self_digest)| {
-//                 // recv_challenge_reply
-//                 let reply = (
-//                     U16.be().expect_eq(21),
-//                     U8.expect_eq(TAG_REPLY),
-//                     U32.be(),
-//                     Buf([0; 16]).expect_eq(self_digest),
-//                 );
-//                 reply.read_from(peer)
-//             })
-//             .and_then(move |(peer, (_, _, peer_challenge, _))| {
-//                 // send_challenge_ack
-//                 let peer_digest = calc_digest(&peer_cookie, peer_challenge);
-//                 let ack = (TAG_ACK, Buf(peer_digest));
-//                 with_len(ack).write_into(peer)
-//             })
-//             .map(|(peer, _)| peer)
-//             .map_err(|e| e.into_error())
-//     }
-// }
-
-// fn check_status(status: String) -> Result<()> {
-//     match status.as_str() {
-//         "ok" | "ok_simultaneous" => Ok(()),
-//         "nok" | "now_allowed" | "alive" => {
-//             let e = Error::new(
-//                 ErrorKind::ConnectionRefused,
-//                 format!("Handshake request is refused by the reason {:?}", status),
-//             );
-//             Err(e)
-//         }
-//         _ => {
-//             let e = Error::new(ErrorKind::Other, format!("Unknown status: {:?}", status));
-//             Err(e)
-//         }
-//     }
-// }

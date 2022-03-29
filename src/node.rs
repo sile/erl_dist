@@ -1,3 +1,7 @@
+// TODO
+// #[derive(Debug)]
+// pub struct Node {}
+
 #[derive(Debug, thiserror::Error)]
 pub enum NodeNameError {
     #[error("node name length must be less than 256, but got {size} characters")]

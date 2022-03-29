@@ -45,6 +45,7 @@ fn main() -> anyhow::Result<()> {
 
         let self_node =
             erl_dist::epmd::NodeInfoBuilder::new(&args.self_node.to_string(), listening_port)
+                .hidden()
                 .build();
 
         let mut self_node_for_epmd = self_node.clone(); // TODO
