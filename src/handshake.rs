@@ -112,7 +112,7 @@ impl Handshake {
         let client = HandshakeClient {
             socket,
             version,
-            peer: peer_node,
+            _peer: peer_node,
             this: self.self_node,
             flags: self.flags,
             creation: self.creation,
@@ -302,7 +302,7 @@ struct HandshakeClient<T> {
     socket: Socket<T>,
     version: HandshakeProtocolVersion,
     this: NodeInfo,
-    peer: NodeInfo,
+    _peer: NodeInfo,
     flags: DistributionFlags,
     creation: Creation,
     cookie: String,
