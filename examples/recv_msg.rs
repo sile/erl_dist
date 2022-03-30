@@ -60,17 +60,64 @@ fn main() -> anyhow::Result<()> {
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
             let stream = stream?;
-            let handshake = erl_dist::handshake::Handshake::new(
-                self_node.clone(),
-                creation,
-                erl_dist::handshake::DistributionFlags::default(),
-                &args.cookie,
-            );
-            let (stream, peer_info) = handshake.accept(stream).await?;
-            println!("Connected: {:?}", peer_info);
+            let self_node = self_node.clone();
+            let cookie = args.cookie.clone();
+            smol::spawn(async move {
+                match handle_client(self_node, creation, cookie, stream).await {
+                    Ok(()) => {
+                        println!("Client disconnected");
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                    }
+                };
+            })
+            .detach();
         }
 
         std::mem::drop(keepalive_socket);
         Ok(())
     })
+}
+
+async fn handle_client(
+    node: erl_dist::epmd::NodeInfo,
+    creation: erl_dist::Creation,
+    cookie: String,
+    stream: smol::net::TcpStream,
+) -> anyhow::Result<()> {
+    let handshake = erl_dist::handshake::Handshake::new(
+        node,
+        creation,
+        erl_dist::handshake::DistributionFlags::default(),
+        &cookie,
+    );
+    let (stream, peer_info) = handshake.accept(stream).await?;
+    println!("Connected: {:?}", peer_info);
+
+    let (mut tx, rx) = erl_dist::channel::channel(stream, peer_info.flags);
+    let mut timer = smol::Timer::after(std::time::Duration::from_secs(30)); // interval?
+    let mut msg_future = Box::pin(rx.recv2());
+    loop {
+        let result = futures::future::select(
+            msg_future,
+            smol::Timer::after(std::time::Duration::from_secs(10)),
+        )
+        .await;
+        match result {
+            futures::future::Either::Left((result, _)) => {
+                let (msg, rx) = result?;
+                println!("Recv: {:?}", msg);
+                msg_future = Box::pin(rx.recv2());
+            }
+            futures::future::Either::Right((_, f)) => {
+                msg_future = f;
+            }
+        }
+
+        if smol::future::poll_once(&mut timer).await.is_some() {
+            tx.tick().await?;
+            timer.set_after(std::time::Duration::from_secs(30));
+        }
+    }
 }
