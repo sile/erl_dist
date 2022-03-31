@@ -226,7 +226,7 @@ where
             return Err(HandshakeError::UnexpectedTag {
                 message: "send_complement",
                 tag,
-            })?;
+            });
         }
         let flags_high =
             DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?) << 32);
@@ -416,8 +416,7 @@ where
                 Ok((name, flags, challenge, None))
             }
             b'N' => {
-                let flags =
-                    DistributionFlags::from_bits_truncate(u64::from(reader.read_u64().await?)); // TODO
+                let flags = DistributionFlags::from_bits_truncate(reader.read_u64().await?); // TODO
                 let challenge = Challenge(reader.read_u32().await?);
                 let creation = Creation::new(reader.read_u32().await?);
                 let name = reader.read_u16_string().await?.parse()?;

@@ -126,13 +126,14 @@ where
         self.inner
     }
 
-    pub fn message_writer<'a>(&'a mut self) -> MessageWriter<'a, T> {
+    pub fn message_writer(&mut self) -> MessageWriter<T> {
         MessageWriter {
             socket: self,
             buf: Vec::new(),
         }
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub async fn message_reader<'a>(&'a mut self) -> std::io::Result<MessageReader<'a, T>> {
         let size = self.read_u16().await? as usize;
         Ok(MessageReader { socket: self, size })
