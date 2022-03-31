@@ -103,6 +103,67 @@ pub trait WriteTermExt: Write {
         self.write_term(tuple)
     }
 
+    fn write_tagged_tuple6<T0, T1, T2, T3, T4>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+        term2: T2,
+        term3: T3,
+        term4: T4,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+        Term: From<T2>,
+        Term: From<T3>,
+        Term: From<T4>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+                Term::from(term2),
+                Term::from(term3),
+                Term::from(term4),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
+    fn write_tagged_tuple7<T0, T1, T2, T3, T4, T5>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+        term2: T2,
+        term3: T3,
+        term4: T4,
+        term5: T5,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+        Term: From<T2>,
+        Term: From<T3>,
+        Term: From<T4>,
+        Term: From<T5>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+                Term::from(term2),
+                Term::from(term3),
+                Term::from(term4),
+                Term::from(term5),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
     fn write_term<T>(&mut self, term: T) -> Result<(), EncodeError>
     where
         Term: From<T>,
@@ -269,6 +330,128 @@ impl DistributionMessage for Exit {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct PayloadExit {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExit {
+    const OP: i32 = 24;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(3)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PayloadExitTt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExitTt {
+    const OP: i32 = 25;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let trace_token = ctrl_msg.take(3);
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PayloadExit2 {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExit2 {
+    const OP: i32 = 26;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(3)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PayloadExit2Tt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExit2Tt {
+    const OP: i32 = 27;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let trace_token = ctrl_msg.take(3);
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Exit2 {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -300,7 +483,7 @@ impl DistributionMessage for Exit2 {
 pub struct ExitTt {
     pub from_pid: Pid,
     pub to_pid: Pid,
-    pub track_token: Term,
+    pub trace_token: Term,
     pub reason: Term,
 }
 
@@ -312,7 +495,7 @@ impl DistributionMessage for ExitTt {
             Self::OP,
             self.from_pid,
             self.to_pid,
-            self.track_token,
+            self.trace_token,
             self.reason,
         )?;
         Ok(())
@@ -322,12 +505,12 @@ impl DistributionMessage for ExitTt {
         ctrl_msg.check_len(5)?;
         let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
         let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let track_token = ctrl_msg.take(3);
+        let trace_token = ctrl_msg.take(3);
         let reason = ctrl_msg.take(4);
         Ok(Self {
             from_pid,
             to_pid,
-            track_token,
+            trace_token,
             reason,
         })
     }
@@ -337,7 +520,7 @@ impl DistributionMessage for ExitTt {
 pub struct Exit2Tt {
     pub from_pid: Pid,
     pub to_pid: Pid,
-    pub track_token: Term,
+    pub trace_token: Term,
     pub reason: Term,
 }
 
@@ -349,7 +532,7 @@ impl DistributionMessage for Exit2Tt {
             Self::OP,
             self.from_pid,
             self.to_pid,
-            self.track_token,
+            self.trace_token,
             self.reason,
         )?;
         Ok(())
@@ -359,12 +542,12 @@ impl DistributionMessage for Exit2Tt {
         ctrl_msg.check_len(5)?;
         let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
         let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let track_token = ctrl_msg.take(3);
+        let trace_token = ctrl_msg.take(3);
         let reason = ctrl_msg.take(4);
         Ok(Self {
             from_pid,
             to_pid,
-            track_token,
+            trace_token,
             reason,
         })
     }
@@ -396,7 +579,7 @@ impl DistributionMessage for Send {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SendTt {
     pub to_pid: Pid,
-    pub track_token: Term,
+    pub trace_token: Term,
     pub message: Term,
 }
 
@@ -404,7 +587,7 @@ impl DistributionMessage for SendTt {
     const OP: i32 = 12;
 
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, Tuple::nil(), self.to_pid, self.track_token)?;
+        writer.write_tagged_tuple4(Self::OP, Tuple::nil(), self.to_pid, self.trace_token)?;
         writer.write_term(self.message)?;
         Ok(())
     }
@@ -412,11 +595,72 @@ impl DistributionMessage for SendTt {
     fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
         ctrl_msg.check_len(4)?;
         let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let track_token = ctrl_msg.take(3);
+        let trace_token = ctrl_msg.take(3);
         let message = reader.read_term()?;
         Ok(Self {
             to_pid,
-            track_token,
+            trace_token,
+            message,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SendSender {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub message: Term,
+}
+
+impl DistributionMessage for SendSender {
+    const OP: i32 = 22;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(3)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let message = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            message,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SendSenderTt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub message: Term,
+}
+
+impl DistributionMessage for SendSenderTt {
+    const OP: i32 = 23;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let trace_token = ctrl_msg.take(3);
+        let message = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
             message,
         })
     }
@@ -455,7 +699,7 @@ impl DistributionMessage for RegSend {
 pub struct RegSendTt {
     pub from_pid: Pid,
     pub to_name: Atom,
-    pub track_token: Term,
+    pub trace_token: Term,
     pub message: Term,
 }
 
@@ -468,7 +712,7 @@ impl DistributionMessage for RegSendTt {
             self.from_pid,
             Tuple::nil(),
             self.to_name,
-            self.track_token,
+            self.trace_token,
         )?;
         writer.write_term(self.message)?;
         Ok(())
@@ -478,12 +722,12 @@ impl DistributionMessage for RegSendTt {
         ctrl_msg.check_len(5)?;
         let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
         let to_name = ctrl_msg.take_as::<Atom>(3, "atom")?;
-        let track_token = ctrl_msg.take(4);
+        let trace_token = ctrl_msg.take(4);
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
             to_name,
-            track_token,
+            trace_token,
             message,
         })
     }
@@ -555,6 +799,38 @@ impl DistributionMessage for MonitorPExit {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct PayloadMonitorPExit {
+    pub from_pid: Pid,
+    pub to_proc: Term, // TODO: pid or atom
+    pub reference: Reference,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadMonitorPExit {
+    const OP: i32 = 28;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_proc, self.reference)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
+        let to_proc = ctrl_msg.take(2);
+        let reference = ctrl_msg.take_as::<Reference>(3, "ref")?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_proc,
+            reference,
+            reason,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct DemonitorP {
     pub from_pid: Pid,
     pub to_proc: Term, // TODO: pid or atom
@@ -582,6 +858,289 @@ impl DistributionMessage for DemonitorP {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpawnRequest {
+    pub req_id: Reference,
+    pub from_pid: Pid,
+    pub group_leader: Pid,
+    pub mfa: Term,      // TODO: {atom(), atom(), integer()}
+    pub opt_list: Term, // TODO: [term()],
+    pub arg_list: Term, // TODO: [term()]
+}
+
+impl DistributionMessage for SpawnRequest {
+    const OP: i32 = 29;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple6(
+            Self::OP,
+            self.req_id,
+            self.from_pid,
+            self.group_leader,
+            self.mfa,
+            self.opt_list,
+        )?;
+        writer.write_term(self.arg_list)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(6)?;
+        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
+        let from_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
+        let group_leader = ctrl_msg.take_as::<Pid>(3, "pid")?;
+        let mfa = ctrl_msg.take(4);
+        let opt_list = ctrl_msg.take(5);
+        let arg_list = reader.read_term()?;
+        Ok(Self {
+            req_id,
+            from_pid,
+            group_leader,
+            mfa,
+            opt_list,
+            arg_list,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpawnRequestTt {
+    pub req_id: Reference,
+    pub from_pid: Pid,
+    pub group_leader: Pid,
+    pub mfa: Term,      // TODO: {atom(), atom(), integer()}
+    pub opt_list: Term, // TODO: [term()],
+    pub trace_token: Term,
+    pub arg_list: Term, // TODO: [term()]
+}
+
+impl DistributionMessage for SpawnRequestTt {
+    const OP: i32 = 30;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple7(
+            Self::OP,
+            self.req_id,
+            self.from_pid,
+            self.group_leader,
+            self.mfa,
+            self.opt_list,
+            self.trace_token,
+        )?;
+        writer.write_term(self.arg_list)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(7)?;
+        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
+        let from_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
+        let group_leader = ctrl_msg.take_as::<Pid>(3, "pid")?;
+        let mfa = ctrl_msg.take(4);
+        let opt_list = ctrl_msg.take(5);
+        let trace_token = ctrl_msg.take(6);
+        let arg_list = reader.read_term()?;
+        Ok(Self {
+            req_id,
+            from_pid,
+            group_leader,
+            mfa,
+            opt_list,
+            trace_token,
+            arg_list,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpawnReply {
+    pub req_id: Reference,
+    pub to_pid: Pid,
+    pub flags: FixInteger,
+    pub result: Term, // TODO: pid() or atom()
+}
+
+impl DistributionMessage for SpawnReply {
+    const OP: i32 = 31;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple5(Self::OP, self.req_id, self.to_pid, self.flags, self.result)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(5)?;
+        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
+        let flags = ctrl_msg.take_as::<FixInteger>(3, "integer")?;
+        let result = ctrl_msg.take(4);
+        Ok(Self {
+            req_id,
+            to_pid,
+            flags,
+            result,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpawnReplyTt {
+    pub req_id: Reference,
+    pub to_pid: Pid,
+    pub flags: FixInteger,
+    pub result: Term, // TODO: pid() or atom()
+    pub trace_token: Term,
+}
+
+impl DistributionMessage for SpawnReplyTt {
+    const OP: i32 = 32;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple6(
+            Self::OP,
+            self.req_id,
+            self.to_pid,
+            self.flags,
+            self.result,
+            self.trace_token,
+        )?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(6)?;
+        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
+        let flags = ctrl_msg.take_as::<FixInteger>(3, "integer")?;
+        let result = ctrl_msg.take(4);
+        let trace_token = ctrl_msg.take(5);
+        Ok(Self {
+            req_id,
+            to_pid,
+            flags,
+            result,
+            trace_token,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnlinkId {
+    pub id: Term,
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+}
+
+impl DistributionMessage for UnlinkId {
+    const OP: i32 = 35;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.id, self.from_pid, self.to_pid)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let id = ctrl_msg.take(1);
+        let from_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(3, "Pid")?;
+        Ok(Self {
+            id,
+            from_pid,
+            to_pid,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnlinkIdAck {
+    pub id: Term,
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+}
+
+impl DistributionMessage for UnlinkIdAck {
+    const OP: i32 = 36;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.id, self.from_pid, self.to_pid)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let id = ctrl_msg.take(1);
+        let from_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+        let to_pid = ctrl_msg.take_as::<Pid>(3, "Pid")?;
+        Ok(Self {
+            id,
+            from_pid,
+            to_pid,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AliasSend {
+    pub from_pid: Pid,
+    pub alias: Term, // Reference(?)
+    pub message: Term,
+}
+
+impl DistributionMessage for AliasSend {
+    const OP: i32 = 33;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.alias)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(3)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let alias = ctrl_msg.take(2);
+        let message = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            alias,
+            message,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AliasSendTt {
+    pub from_pid: Pid,
+    pub alias: Term, // Reference(?)
+    pub trace_token: Term,
+    pub message: Term,
+}
+
+impl DistributionMessage for AliasSendTt {
+    const OP: i32 = 34;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.alias, self.trace_token)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        ctrl_msg.check_len(4)?;
+        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
+        let alias = ctrl_msg.take(2);
+        let trace_token = ctrl_msg.take(3);
+        let message = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            alias,
+            trace_token,
+            message,
+        })
+    }
+}
+
 /// Message.
 ///
 /// This provides various message construction functions.
@@ -603,9 +1162,26 @@ pub enum Message {
     MonitorP(MonitorP),
     DemonitorP(DemonitorP),
     MonitorPExit(MonitorPExit),
+    SendSender(SendSender),
+    SendSenderTt(SendSenderTt),
+    PayloadExit(PayloadExit),
+    PayloadExitTt(PayloadExitTt),
+    PayloadExit2(PayloadExit2),
+    PayloadExit2Tt(PayloadExit2Tt),
+    PayloadMonitorPExit(PayloadMonitorPExit),
+    SpawnRequest(SpawnRequest),
+    SpawnRequestTt(SpawnRequestTt),
+    SpawnReply(SpawnReply),
+    SpawnReplyTt(SpawnReplyTt),
+    UnlinkId(UnlinkId),
+    UnlinkIdAck(UnlinkIdAck),
+    AliasSend(AliasSend),
+    AliasSendTt(AliasSendTt),
 }
 
 impl Message {
+    // TODO: pub into_compatible(self, flags) -> Result<Self>;
+
     pub fn send(to_pid: Pid, message: Term) -> Self {
         Self::Send(Send { to_pid, message })
     }
@@ -635,6 +1211,21 @@ impl Message {
             Self::MonitorP(x) => x.write_into(writer)?,
             Self::DemonitorP(x) => x.write_into(writer)?,
             Self::MonitorPExit(x) => x.write_into(writer)?,
+            Self::SendSender(x) => x.write_into(writer)?,
+            Self::SendSenderTt(x) => x.write_into(writer)?,
+            Self::PayloadExit(x) => x.write_into(writer)?,
+            Self::PayloadExitTt(x) => x.write_into(writer)?,
+            Self::PayloadExit2(x) => x.write_into(writer)?,
+            Self::PayloadExit2Tt(x) => x.write_into(writer)?,
+            Self::PayloadMonitorPExit(x) => x.write_into(writer)?,
+            Self::SpawnRequest(x) => x.write_into(writer)?,
+            Self::SpawnRequestTt(x) => x.write_into(writer)?,
+            Self::SpawnReply(x) => x.write_into(writer)?,
+            Self::SpawnReplyTt(x) => x.write_into(writer)?,
+            Self::UnlinkId(x) => x.write_into(writer)?,
+            Self::UnlinkIdAck(x) => x.write_into(writer)?,
+            Self::AliasSend(x) => x.write_into(writer)?,
+            Self::AliasSendTt(x) => x.write_into(writer)?,
         }
         Ok(())
     }
@@ -667,6 +1258,37 @@ impl Message {
             MonitorPExit::OP => {
                 MonitorPExit::read_from(reader, ctrl_msg).map(Self::MonitorPExit)?
             }
+            SendSender::OP => SendSender::read_from(reader, ctrl_msg).map(Self::SendSender)?,
+            SendSenderTt::OP => {
+                SendSenderTt::read_from(reader, ctrl_msg).map(Self::SendSenderTt)?
+            }
+            PayloadExit::OP => PayloadExit::read_from(reader, ctrl_msg).map(Self::PayloadExit)?,
+            PayloadExitTt::OP => {
+                PayloadExitTt::read_from(reader, ctrl_msg).map(Self::PayloadExitTt)?
+            }
+            PayloadExit2::OP => {
+                PayloadExit2::read_from(reader, ctrl_msg).map(Self::PayloadExit2)?
+            }
+            PayloadExit2Tt::OP => {
+                PayloadExit2Tt::read_from(reader, ctrl_msg).map(Self::PayloadExit2Tt)?
+            }
+            PayloadMonitorPExit::OP => {
+                PayloadMonitorPExit::read_from(reader, ctrl_msg).map(Self::PayloadMonitorPExit)?
+            }
+            SpawnRequest::OP => {
+                SpawnRequest::read_from(reader, ctrl_msg).map(Self::SpawnRequest)?
+            }
+            SpawnRequestTt::OP => {
+                SpawnRequestTt::read_from(reader, ctrl_msg).map(Self::SpawnRequestTt)?
+            }
+            SpawnReply::OP => SpawnReply::read_from(reader, ctrl_msg).map(Self::SpawnReply)?,
+            SpawnReplyTt::OP => {
+                SpawnReplyTt::read_from(reader, ctrl_msg).map(Self::SpawnReplyTt)?
+            }
+            UnlinkId::OP => UnlinkId::read_from(reader, ctrl_msg).map(Self::UnlinkId)?,
+            UnlinkIdAck::OP => UnlinkIdAck::read_from(reader, ctrl_msg).map(Self::UnlinkIdAck)?,
+            AliasSend::OP => AliasSend::read_from(reader, ctrl_msg).map(Self::AliasSend)?,
+            AliasSendTt::OP => AliasSendTt::read_from(reader, ctrl_msg).map(Self::AliasSendTt)?,
             op => return Err(crate::channel::RecvError::UnsupportedOp { op }),
         };
         Ok(msg)
