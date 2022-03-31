@@ -8,7 +8,7 @@
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
 use clap::{Parser, Subcommand};
-use erl_dist::epmd::{EpmdClient, HandshakeProtocolVersion, NodeInfo, NodeType, Protocol};
+use erl_dist::epmd::{EpmdClient, HandshakeProtocolVersion, NodeInfo, NodeType, TransportProtocol};
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
                     } else {
                         NodeType::Normal
                     },
-                    protocol: Protocol::TcpIpV4,
+                    protocol: TransportProtocol::TcpIpV4,
                     highest_version: HandshakeProtocolVersion::V6,
                     lowest_version: HandshakeProtocolVersion::V5,
                     extra: Vec::new(),

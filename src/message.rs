@@ -7,6 +7,8 @@
 use eetf::{Atom, DecodeError, EncodeError, FixInteger, Pid, Reference, Term, Tuple};
 use std::io::{Read, Write};
 
+pub use crate::channel::{channel, Receiver, Sender};
+
 pub trait ReadTermExt: Read {
     fn read_tuple(&mut self) -> Result<Tuple, DecodeError> {
         let term = self.read_term()?;

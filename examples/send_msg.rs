@@ -83,7 +83,7 @@ fn main() -> anyhow::Result<()> {
         let (stream, peer_info) = handshake.connect(peer_node, stream).await?;
         println!("Handshake finished: peer={:?}", peer_info);
 
-        let (mut tx, _) = erl_dist::channel::channel(stream, peer_info.flags);
+        let (mut tx, _) = erl_dist::message::channel(stream, peer_info.flags);
         let pid = eetf::Pid::new(args.self_node.to_string(), 0, 0, creation.get());
         let msg = erl_dist::message::Message::reg_send(
             pid,

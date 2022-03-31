@@ -95,7 +95,7 @@ async fn handle_client(
     let (stream, peer_info) = handshake.accept(stream).await?;
     println!("Connected: {:?}", peer_info);
 
-    let (mut tx, rx) = erl_dist::channel::channel(stream, peer_info.flags);
+    let (mut tx, rx) = erl_dist::message::channel(stream, peer_info.flags);
     let mut timer = smol::Timer::after(std::time::Duration::from_secs(30)); // interval?
     let mut msg_future = Box::pin(rx.recv2());
     loop {

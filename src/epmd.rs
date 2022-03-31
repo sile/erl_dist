@@ -52,9 +52,13 @@ impl FromStr for NodeNameAndPort {
     }
 }
 
+/// Handshake protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum HandshakeProtocolVersion {
+    /// Version 5.
     V5 = 5,
+
+    /// Version 6 (introduced in OTP 23).
     V6 = 6,
 }
 
@@ -99,15 +103,15 @@ impl TryFrom<u8> for NodeType {
     }
 }
 
-// TODO: rename
 /// Protocol for communicating with a distributed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Protocol {
+#[non_exhaustive]
+pub enum TransportProtocol {
     /// TCP/IPv4.
     TcpIpV4 = 0,
 }
 
-impl TryFrom<u8> for Protocol {
+impl TryFrom<u8> for TransportProtocol {
     type Error = EpmdError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -130,7 +134,7 @@ impl NodeInfoBuilder {
                 name: name.to_owned(),
                 port,
                 node_type: NodeType::Normal,
-                protocol: Protocol::TcpIpV4,
+                protocol: TransportProtocol::TcpIpV4,
                 highest_version: HandshakeProtocolVersion::V6,
                 lowest_version: HandshakeProtocolVersion::V5,
                 extra: Vec::new(),
@@ -161,7 +165,7 @@ pub struct NodeInfo {
     pub node_type: NodeType,
 
     /// The protocol for communicating with the node.
-    pub protocol: Protocol,
+    pub protocol: TransportProtocol,
 
     pub highest_version: HandshakeProtocolVersion,
     pub lowest_version: HandshakeProtocolVersion,
@@ -344,7 +348,7 @@ where
         Ok(Some(NodeInfo {
             port: self.socket.read_u16().await?,
             node_type: NodeType::try_from(self.socket.read_u8().await?)?,
-            protocol: Protocol::try_from(self.socket.read_u8().await?)?,
+            protocol: TransportProtocol::try_from(self.socket.read_u8().await?)?,
             highest_version: self.socket.read_u16().await?.try_into()?,
             lowest_version: self.socket.read_u16().await?.try_into()?,
             name: self.socket.read_u16_string().await?,
@@ -453,7 +457,7 @@ mod tests {
                 name: new_node_name.to_owned(),
                 port: 3000,
                 node_type: NodeType::Hidden,
-                protocol: Protocol::TcpIpV4,
+                protocol: TransportProtocol::TcpIpV4,
                 highest_version: HandshakeProtocolVersion::V6,
                 lowest_version: HandshakeProtocolVersion::V5,
                 extra: Vec::new(),

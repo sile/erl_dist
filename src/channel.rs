@@ -1,4 +1,3 @@
-//! Channel implementation for sending/receiving messages between distributed Erlang nodes.
 use crate::handshake::DistributionFlags;
 use crate::message::Message;
 use crate::socket::Socket;
