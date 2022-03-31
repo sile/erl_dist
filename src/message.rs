@@ -132,6 +132,7 @@ pub trait WriteTermExt: Write {
         self.write_term(tuple)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn write_tagged_tuple7<T0, T1, T2, T3, T4, T5>(
         &mut self,
         tag: i32,
