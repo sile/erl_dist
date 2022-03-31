@@ -7,68 +7,73 @@
 //! $ cargo run --example handshake -- --peer foo --self bar@localhost --cookie erlang_cookie
 //! ```
 use clap::Parser;
-use erl_dist::{EpmdClient, Handshake};
-use fibers::net::TcpStream;
-use fibers::{Executor, InPlaceExecutor, Spawn};
-use futures::future::Either;
-use futures::Future;
-use std::io::{Error, ErrorKind};
-use std::net::SocketAddr;
 
 #[derive(Debug, Parser)]
 #[clap(name = "handshake")]
 struct Args {
-    #[clap(long, short = 'h', default_value = "127.0.0.1")]
-    epmd_host: String,
+    #[clap(long = "self", default_value = "bar@localhost")]
+    self_node: erl_dist::node::NodeName,
 
-    #[clap(long, short = 'p', default_value_t = 4369)]
-    epmd_port: u16,
-
-    #[clap(long = "peer", default_value = "foo")]
-    peer_name: String,
+    #[clap(long = "peer", default_value = "foo@localhost")]
+    peer_node: erl_dist::node::NodeName,
 
     #[clap(long, default_value = "WPKYDIOSJIMJUURLRUHV")]
     cookie: String,
-
-    #[clap(long = "self", default_value = "bar@localhost")]
-    self_node: String,
 }
 
-fn main() {
+impl Args {
+    async fn peer_epmd_client(
+        &self,
+    ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
+        let addr = (self.peer_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
+        let stream = smol::net::TcpStream::connect(addr).await?;
+        Ok(erl_dist::epmd::EpmdClient::new(stream))
+    }
+
+    async fn local_epmd_client(
+        &self,
+    ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
+        let addr = (self.self_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
+        let stream = smol::net::TcpStream::connect(addr).await?;
+        Ok(erl_dist::epmd::EpmdClient::new(stream))
+    }
+}
+
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let peer_name = args.peer_name;
-    let self_node = args.self_node;
-    let cookie = args.cookie;
-    let epmd_host = args.epmd_host;
-    let epmd_port = args.epmd_port;
-    let epmd_addr: SocketAddr = format!("{}:{}", epmd_host, epmd_port)
-        .parse()
-        .expect("Invalid epmd address");
+    smol::block_on(async {
+        let peer_node = args
+            .peer_epmd_client()
+            .await?
+            .get_node_info(&args.peer_node.name())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("no such node: {}", args.peer_node))?;
+        println!("Got peer node info: {:?}", peer_node);
 
-    let client = EpmdClient::new();
-    let mut executor = InPlaceExecutor::new().unwrap();
+        let dummy_listening_port = 3333;
+        let self_node =
+            erl_dist::epmd::NodeInfoBuilder::new(&args.self_node.to_string(), dummy_listening_port)
+                .hidden()
+                .build();
 
-    let monitor = executor.spawn_monitor(
-        TcpStream::connect(epmd_addr.clone())
-            .and_then(move |socket| client.get_node_info(socket, &peer_name))
-            .and_then(move |info| {
-                if let Some(addr) = info.map(|i| SocketAddr::new(epmd_addr.ip(), i.port)) {
-                    Either::A(TcpStream::connect(addr).and_then(move |socket| {
-                        let handshake = Handshake::new(&self_node, &cookie);
-                        handshake.connect(socket)
-                    }))
-                } else {
-                    Either::B(futures::failed(Error::new(
-                        ErrorKind::NotFound,
-                        "target node is not found",
-                    )))
-                }
-            }),
-    );
-    let peer = executor
-        .run_fiber(monitor)
-        .unwrap()
-        .expect("Handshake failed");
-    println!("Name: {}", peer.name);
-    println!("Flags: {:?}", peer.flags);
+        let (keepalive_socket, creation) = args
+            .local_epmd_client()
+            .await?
+            .register(self_node.clone())
+            .await?;
+        println!("Registered self node: creation={:?}", creation);
+
+        let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
+        let handshake = erl_dist::handshake::Handshake::new(
+            self_node,
+            creation,
+            erl_dist::handshake::DistributionFlags::default(),
+            &args.cookie,
+        );
+        let (_, peer_info) = handshake.connect(peer_node, stream).await?;
+        println!("Handshake finished: peer={:?}", peer_info);
+
+        std::mem::drop(keepalive_socket);
+        Ok(())
+    })
 }
