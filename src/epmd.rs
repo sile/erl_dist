@@ -418,7 +418,7 @@ mod tests {
             let child = Command::new("erl")
                 .args(&["-sname", name, "-noshell"])
                 .spawn()?;
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(2));
             Ok(Self { child })
         }
     }
