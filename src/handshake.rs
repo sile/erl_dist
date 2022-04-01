@@ -6,14 +6,219 @@
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
 use crate::epmd::NodeEntry;
-use crate::node::NodeName;
+use crate::node::{Creation, Node, NodeName};
 use crate::socket::Socket;
-use crate::Creation;
 use futures::io::{AsyncRead, AsyncWrite};
 
 pub use self::flags::DistributionFlags;
 
+pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
+pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
+
 mod flags;
+
+#[derive(Debug)]
+pub struct Handshaked<T> {
+    pub connection: T,
+    pub local_node: Node,
+    pub peer_node: Node,
+}
+
+#[derive(Debug)]
+pub struct HandshakeClient<T> {
+    local_node: Node,
+    local_challenge: Challenge,
+    cookie: String,
+    socket: Socket<T>,
+}
+
+impl<T> HandshakeClient<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    pub fn new(connection: T, mut local_node: Node, cookie: &str) -> Self {
+        if local_node.creation.is_none() {
+            local_node = Node {
+                creation: Some(Creation::random()),
+                ..local_node
+            };
+        }
+        Self {
+            local_node,
+            local_challenge: Challenge::new(),
+            cookie: cookie.to_owned(),
+            socket: Socket::new(connection),
+        }
+    }
+
+    pub async fn execute(mut self) -> Result<Handshaked<T>, HandshakeError> {
+        log::debug!(
+            "[client] handshake started: local_node={:?}, local_challenge={:?}",
+            self.local_node,
+            self.local_challenge
+        );
+
+        self.send_name().await?;
+        log::debug!("[client] send_name");
+
+        self.recv_status().await?;
+        log::debug!("[client] recv_status");
+
+        let (peer_node, peer_challenge) = self.recv_challenge().await?;
+        log::debug!(
+            "[client] recv_challenge: peer_node={:?}, peer_challenge={:?}",
+            peer_node,
+            peer_node
+        );
+
+        self.send_complement().await?;
+        log::debug!("[client] send_complement");
+
+        self.send_challenge_reply(peer_challenge).await?;
+        log::debug!("[client] send_challenge_reply");
+
+        self.recv_challenge_ack().await?;
+        log::debug!("[client] recv_challenge_ack");
+
+        Ok(Handshaked {
+            connection: self.socket.into_inner(),
+            local_node: self.local_node,
+            peer_node,
+        })
+    }
+
+    async fn send_name(&mut self) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b'n')?;
+        writer.write_u16(5)?;
+        writer.write_u32(self.local_node.flags.bits() as u32)?;
+        writer.write_all(self.local_node.name.to_string().as_bytes())?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn recv_status(&mut self) -> Result<(), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        if tag != b's' {
+            return Err(HandshakeError::UnexpectedTag {
+                message: "STATUS",
+                tag,
+            });
+        }
+        let status = reader.read_string().await?;
+        match status.as_str() {
+            "ok" | "ok_simultaneous" => {}
+            "nok" => {
+                return Err(HandshakeError::OngoingHandshake);
+            }
+            "not_allowed" => {
+                return Err(HandshakeError::NotAllowed);
+            }
+            "alive" => {
+                // TODO: Add an option to send "true" instead.
+                self.send_status("false").await?;
+                return Err(HandshakeError::AlreadyActive);
+            }
+            "named:" => {
+                // TODO:
+                todo!();
+            }
+            _ => {
+                return Err(HandshakeError::UnknownStatus { status });
+            }
+        }
+        reader.finish().await?;
+        Ok(())
+    }
+
+    async fn send_status(&mut self, status: &str) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b's')?;
+        writer.write_all(status.as_bytes())?;
+        Ok(())
+    }
+
+    async fn recv_challenge(&mut self) -> Result<(Node, Challenge), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let (node, challenge) = match reader.read_u8().await? {
+            b'n' => {
+                let _version = reader.read_u16().await?;
+                let flags =
+                    DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?));
+                let challenge = Challenge(reader.read_u32().await?);
+                let name = reader.read_string().await?.parse()?;
+                let node = Node {
+                    name,
+                    flags,
+                    creation: None,
+                };
+                (node, challenge)
+            }
+            b'N' => {
+                let flags = DistributionFlags::from_bits_truncate(reader.read_u64().await?);
+                let challenge = Challenge(reader.read_u32().await?);
+                let creation = Creation::new(reader.read_u32().await?);
+                let name = reader.read_u16_string().await?.parse()?;
+                let node = Node {
+                    name,
+                    flags,
+                    creation: Some(creation),
+                };
+                (node, challenge)
+            }
+            tag => {
+                return Err(HandshakeError::UnexpectedTag {
+                    message: "CHALLENGE",
+                    tag,
+                })
+            }
+        };
+        reader.finish().await?;
+        Ok((node, challenge))
+    }
+
+    async fn send_complement(&mut self) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b'c')?;
+        writer.write_u32((self.local_node.flags.bits() >> 32) as u32)?;
+        writer.write_u32(self.local_node.creation.expect("unreachable").get())?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn send_challenge_reply(
+        &mut self,
+        peer_challenge: Challenge,
+    ) -> Result<(), HandshakeError> {
+        let mut writer = self.socket.message_writer();
+        writer.write_u8(b'r')?;
+        writer.write_u32(self.local_challenge.0)?;
+        writer.write_all(&peer_challenge.digest(&self.cookie).0)?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    async fn recv_challenge_ack(&mut self) -> Result<(), HandshakeError> {
+        let mut reader = self.socket.message_reader().await?;
+        let tag = reader.read_u8().await?;
+        if tag != b'a' {
+            return Err(HandshakeError::UnexpectedTag {
+                message: "CHALLENGE_ACK",
+                tag,
+            });
+        }
+
+        let mut digest = [0; 16];
+        reader.read_exact(&mut digest).await?;
+        if digest != self.local_challenge.digest(&self.cookie).0 {
+            return Err(HandshakeError::InvalidDigest);
+        }
+        reader.finish().await?;
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
@@ -99,28 +304,6 @@ impl Handshake {
         }
     }
 
-    pub async fn connect<T>(
-        self,
-        peer_node: NodeEntry,
-        socket: T,
-    ) -> Result<(T, PeerInfo), HandshakeError>
-    where
-        T: AsyncRead + AsyncWrite + Unpin,
-    {
-        let socket = Socket::new(socket);
-        let version = self.check_available_highest_version(&peer_node)?;
-        let client = HandshakeClient {
-            socket,
-            version,
-            _peer: peer_node,
-            this: self.self_node,
-            flags: self.flags,
-            creation: self.creation,
-            cookie: self.cookie,
-        };
-        client.connect().await
-    }
-
     pub async fn accept<T>(self, socket: T) -> Result<(T, PeerInfo), HandshakeError>
     where
         T: AsyncRead + AsyncWrite + Unpin,
@@ -135,26 +318,6 @@ impl Handshake {
             challenge: Challenge::new(),
         };
         server.accept().await
-    }
-
-    fn check_available_highest_version(
-        &self,
-        peer_node: &NodeEntry,
-    ) -> Result<u16, HandshakeError> {
-        let self_version_range = self.self_node.lowest_version..=self.self_node.highest_version;
-        let peer_version_range = peer_node.lowest_version..=peer_node.highest_version;
-        if self_version_range.contains(&peer_node.highest_version) {
-            Ok(peer_node.highest_version)
-        } else if peer_version_range.contains(&self.self_node.highest_version) {
-            Ok(self.self_node.highest_version)
-        } else {
-            Err(HandshakeError::VersionMismatch {
-                self_highest: self.self_node.highest_version,
-                self_lowest: self.self_node.lowest_version,
-                peer_highest: peer_node.highest_version,
-                peer_lowest: peer_node.lowest_version,
-            })
-        }
     }
 }
 
@@ -297,178 +460,4 @@ where
     }
 }
 
-#[derive(Debug)]
-struct HandshakeClient<T> {
-    socket: Socket<T>,
-    version: u16,
-    this: NodeEntry,
-    _peer: NodeEntry,
-    flags: DistributionFlags,
-    creation: Creation,
-    cookie: String,
-}
-
-impl<T> HandshakeClient<T>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-{
-    async fn connect(mut self) -> Result<(T, PeerInfo), HandshakeError> {
-        self.send_name().await?;
-
-        let status = self.recv_status().await?;
-        match status.as_str() {
-            "ok" | "ok_simultaneous" => {}
-            "nok" => {
-                return Err(HandshakeError::OngoingHandshake);
-            }
-            "not_allowed" => {
-                return Err(HandshakeError::NotAllowed);
-            }
-            "alive" => {
-                // TODO: Add an option to send "true" instead.
-                self.send_status("false").await?;
-                return Err(HandshakeError::AlreadyActive);
-            }
-            "named" => {
-                todo!();
-            }
-            _ => {
-                return Err(HandshakeError::UnknownStatus { status });
-            }
-        }
-
-        let (peer_name, peer_flags, peer_challenge, peer_creation) = self.recv_challenge().await?;
-        if self.version == 5 && peer_creation.is_some() {
-            // TODO: use flags
-            self.send_complement().await?;
-        }
-
-        let self_challenge = Challenge::new();
-        self.send_challenge_reply(self_challenge, peer_challenge)
-            .await?;
-
-        self.recv_challenge_ack(self_challenge).await?;
-
-        let peer_info = PeerInfo {
-            name: peer_name,
-            flags: peer_flags,
-            creation: peer_creation,
-        };
-        Ok((self.socket.into_inner(), peer_info))
-    }
-
-    async fn recv_challenge_ack(
-        &mut self,
-        self_challenge: Challenge,
-    ) -> Result<(), HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
-        let tag = reader.read_u8().await?;
-        if tag != b'a' {
-            return Err(HandshakeError::UnexpectedTag {
-                message: "recv_challenge_ack",
-                tag,
-            });
-        }
-
-        let mut digest = [0; 16];
-        reader.read_exact(&mut digest).await?;
-        if digest != self_challenge.digest(&self.cookie).0 {
-            return Err(HandshakeError::InvalidDigest);
-        }
-
-        Ok(())
-    }
-
-    async fn send_challenge_reply(
-        &mut self,
-        self_challenge: Challenge,
-        peer_challenge: Challenge,
-    ) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
-        writer.write_u8(b'r')?;
-        writer.write_u32(self_challenge.0)?;
-        writer.write_all(&peer_challenge.digest(&self.cookie).0)?;
-        writer.finish().await?;
-        Ok(())
-    }
-
-    async fn send_complement(&mut self) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
-        writer.write_u8(b'c')?;
-        writer.write_u32((self.flags.bits() >> 32) as u32)?;
-        writer.write_u32(self.creation.get())?;
-        writer.finish().await?;
-        Ok(())
-    }
-
-    async fn recv_challenge(
-        &mut self,
-    ) -> Result<(NodeName, DistributionFlags, Challenge, Option<Creation>), HandshakeError> {
-        // TODO: version and flag check
-        let mut reader = self.socket.message_reader().await?;
-        match reader.read_u8().await? {
-            b'n' => {
-                let version = reader.read_u16().await?;
-                assert_eq!(version, 5); // TODO
-                let flags =
-                    DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?)); // TODO
-                let challenge = Challenge(reader.read_u32().await?);
-                let name = reader.read_string().await?.parse()?;
-                Ok((name, flags, challenge, None))
-            }
-            b'N' => {
-                let flags = DistributionFlags::from_bits_truncate(reader.read_u64().await?); // TODO
-                let challenge = Challenge(reader.read_u32().await?);
-                let creation = Creation::new(reader.read_u32().await?);
-                let name = reader.read_u16_string().await?.parse()?;
-                reader.consume_remaining_bytes().await?;
-                Ok((name, flags, challenge, Some(creation)))
-            }
-            tag => Err(HandshakeError::UnexpectedTag {
-                message: "recv_challenge",
-                tag,
-            }),
-        }
-    }
-
-    async fn send_name(&mut self) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
-        match self.version {
-            5 => {
-                writer.write_u8(b'n')?;
-                writer.write_u16(self.version as u16)?;
-                writer.write_u32(self.flags.bits() as u32)?;
-                writer.write_all(self.this.name.as_bytes())?;
-            }
-            6 => {
-                writer.write_u8(b'N')?;
-                writer.write_u64(self.flags.bits())?;
-                writer.write_u32(self.creation.get())?;
-                writer.write_u16(self.this.name.len() as u16)?; // TODO: validation
-                writer.write_all(self.this.name.as_bytes())?;
-            }
-            _ => {
-                todo!()
-            }
-        }
-        writer.finish().await?;
-        Ok(())
-    }
-
-    async fn send_status(&mut self, status: &str) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
-        writer.write_u8(b's')?;
-        writer.write_all(status.as_bytes())?;
-        Ok(())
-    }
-
-    async fn recv_status(&mut self) -> Result<String, HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
-        let tag = reader.read_u8().await?;
-        if tag != b's' {
-            todo!();
-        }
-        let status = reader.read_string().await?;
-        Ok(status)
-    }
-}
+// TODO: add test

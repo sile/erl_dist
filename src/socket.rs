@@ -106,6 +106,10 @@ where
         self.socket.read_exact(&mut buf).await?;
         Ok(())
     }
+
+    pub async fn finish(mut self) -> std::io::Result<()> {
+        self.consume_remaining_bytes().await
+    }
 }
 
 // An internal struct to make it easier to read from and write into a socket.

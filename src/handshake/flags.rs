@@ -156,3 +156,5 @@ impl Default for DistributionFlags {
             | Self::DFLAG_BIG_CREATION
     }
 }
+
+// TODO: mandatory list

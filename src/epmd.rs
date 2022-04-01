@@ -5,14 +5,14 @@
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details.
+use crate::handshake::{
+    HIGHEST_DISTRIBUTION_PROTOCOL_VERSION, LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
+};
 #[cfg(doc)]
 use crate::node::NodeName;
-use crate::node::NodeType;
+use crate::node::{Creation, NodeType};
 use crate::socket::Socket;
-use crate::{
-    Creation, TransportProtocol, HIGHEST_DISTRIBUTION_PROTOCOL_VERSION,
-    LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
-};
+use crate::TransportProtocol;
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
@@ -344,8 +344,12 @@ mod tests {
             let child = Command::new("erl")
                 .args(&["-sname", name, "-noshell"])
                 .spawn()?;
+            let start = std::time::Instant::now();
             while epmd_client().await.get_node(name).await?.is_none() {
                 std::thread::sleep(std::time::Duration::from_millis(500));
+                if start.elapsed() > std::time::Duration::from_secs(10) {
+                    break;
+                }
             }
             Ok(Self { child })
         }

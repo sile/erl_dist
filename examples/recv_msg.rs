@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
 
 async fn handle_client(
     node: erl_dist::epmd::NodeEntry,
-    creation: erl_dist::Creation,
+    creation: erl_dist::node::Creation,
     cookie: String,
     stream: smol::net::TcpStream,
 ) -> anyhow::Result<()> {

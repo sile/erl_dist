@@ -1,3 +1,5 @@
+use crate::handshake::DistributionFlags;
+
 #[derive(Debug, thiserror::Error)]
 pub enum NodeNameError {
     #[error("node name length must be less than 256, but got {size} characters")]
@@ -5,6 +7,23 @@ pub enum NodeNameError {
 
     #[error("node name must contain an '@' character")]
     MissingAtmark,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Node {
+    pub name: NodeName,
+    pub flags: DistributionFlags, // TODO: capabilities (?)
+    pub creation: Option<Creation>,
+}
+
+impl Node {
+    pub fn new(name: NodeName, creation: Creation) -> Self {
+        Self {
+            name,
+            flags: Default::default(),
+            creation: Some(creation),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -74,5 +93,28 @@ impl TryFrom<u8> for NodeType {
             77 => Ok(Self::Normal),
             _ => Err(crate::epmd::EpmdError::UnknownNodeType { value }),
         }
+    }
+}
+
+/// Incarnation identifier of a node.
+///
+/// [`Creation`] is used by the node to create its pids, ports and references.
+/// If the node restarts, the value of [`Creation`] will be changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Creation(u32);
+
+impl Creation {
+    /// Makes a new [`Creation`] instance.
+    pub const fn new(n: u32) -> Self {
+        Self(n)
+    }
+
+    pub fn random() -> Self {
+        Self(rand::random())
+    }
+
+    /// Gets the value.
+    pub const fn get(self) -> u32 {
+        self.0
     }
 }

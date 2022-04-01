@@ -16,28 +16,6 @@ pub mod node;
 mod channel;
 mod socket;
 
-pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
-pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
-
-/// Incarnation identifier of a node.
-///
-/// [`Creation`] is used by the node to create its pids, ports and references.
-/// If the node restarts, the value of [`Creation`] will be changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Creation(u32);
-
-impl Creation {
-    /// Makes a new [`Creation`] instance.
-    pub const fn new(n: u32) -> Self {
-        Self(n)
-    }
-
-    /// Gets the value.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
 /// Protocol for communicating with a distributed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
