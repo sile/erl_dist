@@ -5,7 +5,7 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
-use crate::epmd::NodeInfo;
+use crate::epmd::NodeEntry;
 use crate::node::NodeName;
 use crate::socket::Socket;
 use crate::Creation;
@@ -79,7 +79,7 @@ pub enum HandshakeError {
 
 #[derive(Debug)]
 pub struct Handshake {
-    self_node: NodeInfo,
+    self_node: NodeEntry,
     creation: Creation,
     flags: DistributionFlags,
     cookie: String,
@@ -87,7 +87,7 @@ pub struct Handshake {
 
 impl Handshake {
     pub fn new(
-        self_node: NodeInfo,
+        self_node: NodeEntry,
         creation: Creation,
         flags: DistributionFlags,
         cookie: &str,
@@ -102,7 +102,7 @@ impl Handshake {
 
     pub async fn connect<T>(
         self,
-        peer_node: NodeInfo,
+        peer_node: NodeEntry,
         socket: T,
     ) -> Result<(T, PeerInfo), HandshakeError>
     where
@@ -140,7 +140,7 @@ impl Handshake {
 
     fn check_available_highest_version(
         &self,
-        peer_node: &NodeInfo,
+        peer_node: &NodeEntry,
     ) -> Result<DistributionProtocolVersion, HandshakeError> {
         let self_version_range = self.self_node.lowest_version..=self.self_node.highest_version;
         let peer_version_range = peer_node.lowest_version..=peer_node.highest_version;
@@ -162,7 +162,7 @@ impl Handshake {
 #[derive(Debug)]
 struct HandshakeServer<T> {
     socket: Socket<T>,
-    this: NodeInfo,
+    this: NodeEntry,
     flags: DistributionFlags,
     creation: Creation,
     cookie: String,
@@ -302,8 +302,8 @@ where
 struct HandshakeClient<T> {
     socket: Socket<T>,
     version: DistributionProtocolVersion,
-    this: NodeInfo,
-    _peer: NodeInfo,
+    this: NodeEntry,
+    _peer: NodeEntry,
     flags: DistributionFlags,
     creation: Creation,
     cookie: String,

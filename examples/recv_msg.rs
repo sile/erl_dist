@@ -44,9 +44,7 @@ fn main() -> anyhow::Result<()> {
         println!("Listening port: {}", listening_port);
 
         let self_node =
-            erl_dist::epmd::NodeInfoBuilder::new(&args.self_node.to_string(), listening_port)
-                .hidden()
-                .build();
+            erl_dist::epmd::NodeEntry::new_hidden(&args.self_node.to_string(), listening_port);
 
         let mut self_node_for_epmd = self_node.clone(); // TODO
         self_node_for_epmd.name = args.self_node.name().to_owned();
@@ -81,7 +79,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn handle_client(
-    node: erl_dist::epmd::NodeInfo,
+    node: erl_dist::epmd::NodeEntry,
     creation: erl_dist::Creation,
     cookie: String,
     stream: smol::net::TcpStream,

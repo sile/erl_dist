@@ -51,10 +51,10 @@ fn main() -> anyhow::Result<()> {
         println!("Got peer node info: {:?}", peer_node);
 
         let dummy_listening_port = 3333;
-        let self_node =
-            erl_dist::epmd::NodeInfoBuilder::new(&args.self_node.to_string(), dummy_listening_port)
-                .hidden()
-                .build();
+        let self_node = erl_dist::epmd::NodeEntry::new_hidden(
+            &args.self_node.to_string(),
+            dummy_listening_port,
+        );
 
         let (keepalive_socket, creation) = args
             .local_epmd_client()

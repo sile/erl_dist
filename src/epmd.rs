@@ -23,41 +23,9 @@ const TAG_ALIVE2_REQ: u8 = 120;
 const TAG_ALIVE2_RESP: u8 = 121;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
-// TODO: NodeName (with 255 bytes limit)
-
-#[derive(Debug)]
-pub struct NodeInfoBuilder {
-    node: NodeInfo,
-}
-
-impl NodeInfoBuilder {
-    pub fn new(name: &str, port: u16) -> Self {
-        Self {
-            node: NodeInfo {
-                name: name.to_owned(),
-                port,
-                node_type: NodeType::Normal,
-                protocol: TransportProtocol::TcpIpV4,
-                highest_version: DistributionProtocolVersion::V6,
-                lowest_version: DistributionProtocolVersion::V5,
-                extra: Vec::new(),
-            },
-        }
-    }
-
-    pub fn hidden(mut self) -> Self {
-        self.node.node_type = NodeType::Hidden;
-        self
-    }
-
-    pub fn build(self) -> NodeInfo {
-        self.node
-    }
-}
-
-/// Node information.
+/// An node entry registered in EPMD.
 #[derive(Debug, Clone)]
-pub struct NodeInfo {
+pub struct NodeEntry {
     /// The node name.
     pub name: String,
 
@@ -77,7 +45,31 @@ pub struct NodeInfo {
     pub extra: Vec<u8>,
 }
 
-impl NodeInfo {
+impl NodeEntry {
+    pub fn new(name: &str, port: u16) -> Self {
+        Self {
+            name: name.to_owned(),
+            port,
+            node_type: NodeType::Normal,
+            protocol: TransportProtocol::TcpIpV4,
+            highest_version: DistributionProtocolVersion::V6,
+            lowest_version: DistributionProtocolVersion::V5,
+            extra: Vec::new(),
+        }
+    }
+
+    pub fn new_hidden(name: &str, port: u16) -> Self {
+        Self {
+            name: name.to_owned(),
+            port,
+            node_type: NodeType::Hidden,
+            protocol: TransportProtocol::TcpIpV4,
+            highest_version: DistributionProtocolVersion::V6,
+            lowest_version: DistributionProtocolVersion::V5,
+            extra: Vec::new(),
+        }
+    }
+
     fn bytes_len(&self) -> usize {
         2 + self.name.len() + // name
         2 + // port
@@ -116,7 +108,7 @@ pub enum EpmdError {
 
     /// PORT_PLEASE2_REQ request failure.
     #[error("EPMD responded an error code {code} against a PORT_PLEASE2_REQ request")]
-    GetNodeInfoError { code: u8 },
+    GetNodeEntryError { code: u8 },
 
     /// ALIVE2_REQ request failure.
     #[error("EPMD responded an error code {code} against an ALIVE2_REQ request")]
@@ -154,7 +146,7 @@ where
     ///
     /// The connection created to the EPMD must be kept as long as the node is a distributed node.
     /// When the connection is closed, the node is automatically unregistered from the EPMD.
-    pub async fn register(mut self, node: NodeInfo) -> Result<(T, Creation), EpmdError> {
+    pub async fn register(mut self, node: NodeEntry) -> Result<(T, Creation), EpmdError> {
         // Request.
         let size = 1 + node.bytes_len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
@@ -220,7 +212,7 @@ where
     /// the `node_name` node from EPMD.
     ///
     /// If the node has not been registered in the connected EPMD, this method will return `None`.
-    pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeInfo>, EpmdError> {
+    pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeEntry>, EpmdError> {
         // Request.
         let size = 1 + node_name.len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
@@ -244,11 +236,11 @@ where
                 return Ok(None);
             }
             code => {
-                return Err(EpmdError::GetNodeInfoError { code });
+                return Err(EpmdError::GetNodeEntryError { code });
             }
         }
 
-        Ok(Some(NodeInfo {
+        Ok(Some(NodeEntry {
             port: self.socket.read_u16().await?,
             node_type: NodeType::try_from(self.socket.read_u8().await?)?,
             protocol: TransportProtocol::try_from(self.socket.read_u8().await?)?,
@@ -380,7 +372,7 @@ mod tests {
             // Register a new node.
             let client = epmd_client().await;
             let new_node_name = "erl_dist_test_new_node";
-            let new_node = NodeInfo {
+            let new_node = NodeEntry {
                 name: new_node_name.to_owned(),
                 port: 3000,
                 node_type: NodeType::Hidden,
