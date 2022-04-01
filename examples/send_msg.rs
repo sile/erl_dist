@@ -53,16 +53,16 @@ fn main() -> anyhow::Result<()> {
         let peer_node = args
             .peer_epmd_client()
             .await?
-            .get_node_info(&args.peer_node.name())
+            .get_node(&args.peer_node.name())
             .await?
             .ok_or_else(|| anyhow::anyhow!("no such node: {}", args.peer_node))?;
         println!("Got peer node info: {:?}", peer_node);
 
         let dummy_listening_port = 3333;
-        let self_node =
-            erl_dist::epmd::NodeInfoBuilder::new(&args.self_node.to_string(), dummy_listening_port)
-                .hidden()
-                .build();
+        let self_node = erl_dist::epmd::NodeEntry::new_hidden(
+            &args.self_node.to_string(),
+            dummy_listening_port,
+        );
 
         let mut self_node_for_epmd = self_node.clone(); // TODO
         self_node_for_epmd.name = args.self_node.name().to_owned();

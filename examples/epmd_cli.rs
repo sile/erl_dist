@@ -8,7 +8,7 @@
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
 use clap::{Parser, Subcommand};
-use erl_dist::epmd::{EpmdClient, HandshakeProtocolVersion, NodeInfo, NodeType, TransportProtocol};
+use erl_dist::epmd::{EpmdClient, NodeEntry};
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -27,7 +27,7 @@ struct Args {
 enum Command {
     Names,
     Dump,
-    NodeInfo {
+    NodeEntry {
         node: String,
     },
     Kill,
@@ -56,21 +56,21 @@ fn main() -> anyhow::Result<()> {
                 let names = client.get_names().await?;
                 let result = serde_json::json!(names
                     .into_iter()
-                    .map(|n| serde_json::json!({"name": n.name, "port": n.port}))
+                    .map(|(name, port)| serde_json::json!({"name": name, "port": port}))
                     .collect::<Vec<_>>());
                 println!("{}", serde_json::to_string_pretty(&result)?);
             }
-            Command::NodeInfo { node } => {
+            Command::NodeEntry { node } => {
                 // 'PORT_PLEASE2_REQ'
-                if let Some(info) = client.get_node_info(&node).await? {
+                if let Some(node) = client.get_node(&node).await? {
                     let result = serde_json::json!({
-                        "name": info.name,
-                        "port": info.port,
-                        "node_type": format!("{:?} ({})", info.node_type, info.node_type as u8),
-                        "protocol": format!("{:?} ({})", info.protocol, info.protocol as u8),
-                        "highest_version": info.highest_version as u16,
-                        "lowest_version": info.lowest_version as u16,
-                        "extra": info.extra
+                        "name": node.name,
+                        "port": node.port,
+                        "node_type": format!("{:?} ({})", node.node_type, node.node_type as u8),
+                        "protocol": format!("{:?} ({})", node.protocol, node.protocol as u8),
+                        "highest_version": node.highest_version as u16,
+                        "lowest_version": node.lowest_version as u16,
+                         "extra": node.extra
                     });
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
@@ -90,18 +90,10 @@ fn main() -> anyhow::Result<()> {
             }
             Command::Register { name, port, hidden } => {
                 // 'ALIVE2_REQ'
-                let node = NodeInfo {
-                    name: name.to_string(),
-                    port,
-                    node_type: if hidden {
-                        NodeType::Hidden
-                    } else {
-                        NodeType::Normal
-                    },
-                    protocol: TransportProtocol::TcpIpV4,
-                    highest_version: HandshakeProtocolVersion::V6,
-                    lowest_version: HandshakeProtocolVersion::V5,
-                    extra: Vec::new(),
+                let node = if hidden {
+                    NodeEntry::new_hidden(&name, port)
+                } else {
+                    NodeEntry::new(&name, port)
                 };
                 let (_, creation) = client.register(node).await?;
                 let result = serde_json::json!({

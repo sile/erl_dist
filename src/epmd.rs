@@ -4,9 +4,12 @@
 //! it provides name resolution functionalities for distributed erlang nodes.
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
-//! for more details about the protocol.
+//! for more details.
+#[cfg(doc)]
+use crate::node::NodeName;
+use crate::node::NodeType;
 use crate::socket::Socket;
-use crate::Creation;
+use crate::{Creation, DistributionProtocolVersion, TransportProtocol};
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
@@ -22,159 +25,60 @@ const TAG_ALIVE2_REQ: u8 = 120;
 const TAG_ALIVE2_RESP: u8 = 121;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
-// TODO: NodeName (with 255 bytes limit)
-
-/// Node name and port.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct NodeNameAndPort {
+/// Entry of a node registered in EPMD.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NodeEntry {
     /// Node name.
+    ///
+    /// Note that it differs from [`NodeName`] as this name doesn't contain the host part.
     pub name: String,
 
-    /// Listening port of this node.
-    pub port: u16,
-}
-
-impl FromStr for NodeNameAndPort {
-    type Err = EpmdError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let error = || EpmdError::MalformedNodeNameAndPortLine { line: s.to_owned() };
-
-        if !s.starts_with("name ") {
-            return Err(error());
-        }
-
-        let s = &s["name ".len()..];
-        let pos = s.find(" at port ").ok_or_else(error)?;
-        let name = s[..pos].to_string();
-        let port = s[pos + " at port ".len()..].parse().map_err(|_| error())?;
-        Ok(Self { name, port })
-    }
-}
-
-/// Handshake protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum HandshakeProtocolVersion {
-    /// Version 5.
-    V5 = 5,
-
-    /// Version 6 (introduced in OTP 23).
-    V6 = 6,
-}
-
-impl std::fmt::Display for HandshakeProtocolVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", *self as u16)
-    }
-}
-
-impl TryFrom<u16> for HandshakeProtocolVersion {
-    type Error = EpmdError;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            5 => Ok(Self::V5),
-            6 => Ok(Self::V6),
-            _ => Err(EpmdError::UnknownVersion { value }),
-        }
-    }
-}
-
-/// Type of a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum NodeType {
-    /// Hidden node (C-node).
-    Hidden = 72,
-
-    /// Normal Erlang node.
-    Normal = 77,
-}
-
-impl TryFrom<u8> for NodeType {
-    type Error = EpmdError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            72 => Ok(Self::Hidden),
-            77 => Ok(Self::Normal),
-            _ => Err(EpmdError::UnknownNodeType { value }),
-        }
-    }
-}
-
-/// Protocol for communicating with a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum TransportProtocol {
-    /// TCP/IPv4.
-    TcpIpV4 = 0,
-}
-
-impl TryFrom<u8> for TransportProtocol {
-    type Error = EpmdError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::TcpIpV4),
-            _ => Err(EpmdError::UnknownProtocol { value }),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct NodeInfoBuilder {
-    node: NodeInfo,
-}
-
-impl NodeInfoBuilder {
-    pub fn new(name: &str, port: u16) -> Self {
-        Self {
-            node: NodeInfo {
-                name: name.to_owned(),
-                port,
-                node_type: NodeType::Normal,
-                protocol: TransportProtocol::TcpIpV4,
-                highest_version: HandshakeProtocolVersion::V6,
-                lowest_version: HandshakeProtocolVersion::V5,
-                extra: Vec::new(),
-            },
-        }
-    }
-
-    pub fn hidden(mut self) -> Self {
-        self.node.node_type = NodeType::Hidden;
-        self
-    }
-
-    pub fn build(self) -> NodeInfo {
-        self.node
-    }
-}
-
-/// Node information.
-#[derive(Debug, Clone)]
-pub struct NodeInfo {
-    /// The node name.
-    pub name: String,
-
-    /// The port number on which the node accept connection requests.
+    /// Port number on which this node accepts connection requests.
     pub port: u16,
 
-    /// The node type.
+    /// Node type.
     pub node_type: NodeType,
 
-    /// The protocol for communicating with the node.
+    /// Transport protocol to communicate with this node.
     pub protocol: TransportProtocol,
 
-    pub highest_version: HandshakeProtocolVersion,
-    pub lowest_version: HandshakeProtocolVersion,
+    /// Highest distribution protocol version that this node can handle.
+    pub highest_version: DistributionProtocolVersion,
+
+    /// Lowest distribution protocol version that this node can handle.
+    pub lowest_version: DistributionProtocolVersion,
 
     /// Extra field.
     pub extra: Vec<u8>,
 }
 
-impl NodeInfo {
+impl NodeEntry {
+    /// Makes a [`NodeEntry`] instance for a normal node.
+    pub fn new(name: &str, port: u16) -> Self {
+        Self {
+            name: name.to_owned(),
+            port,
+            node_type: NodeType::Normal,
+            protocol: TransportProtocol::TcpIpV4,
+            highest_version: DistributionProtocolVersion::V6,
+            lowest_version: DistributionProtocolVersion::V5,
+            extra: Vec::new(),
+        }
+    }
+
+    /// Makes a [`NodeEntry`] instance for a hidden node.
+    pub fn new_hidden(name: &str, port: u16) -> Self {
+        Self {
+            name: name.to_owned(),
+            port,
+            node_type: NodeType::Hidden,
+            protocol: TransportProtocol::TcpIpV4,
+            highest_version: DistributionProtocolVersion::V6,
+            lowest_version: DistributionProtocolVersion::V5,
+            extra: Vec::new(),
+        }
+    }
+
     fn bytes_len(&self) -> usize {
         2 + self.name.len() + // name
         2 + // port
@@ -186,7 +90,7 @@ impl NodeInfo {
     }
 }
 
-/// EPMD related errors.
+/// Possible errors.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 #[allow(missing_docs)]
@@ -199,29 +103,29 @@ pub enum EpmdError {
     #[error("unknown node type {value}")]
     UnknownNodeType { value: u8 },
 
-    /// Unknown protocol.
-    #[error("unknown protocol {value}")]
-    UnknownProtocol { value: u8 },
+    /// Unknown transport protocol.
+    #[error("unknown transport protocol {value}")]
+    UnknownTransportProtocol { value: u8 },
 
     /// Unknown distribution protocol version.
     #[error("unknown distribution protocol version {value}")]
-    UnknownVersion { value: u16 },
+    UnknownDistributionProtocolVersion { value: u16 },
 
     /// Too long request.
     #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
     TooLongRequest { size: usize },
 
-    /// PORT_PLEASE2_REQ request failure.
+    /// `PORT_PLEASE2_REQ` request failure.
     #[error("EPMD responded an error code {code} against a PORT_PLEASE2_REQ request")]
-    GetNodeInfoError { code: u8 },
+    GetNodeEntryError { code: u8 },
 
-    /// ALIVE2_REQ request failure.
+    /// `ALIVE2_REQ` request failure.
     #[error("EPMD responded an error code {code} against an ALIVE2_REQ request")]
     RegisterNodeError { code: u8 },
 
-    /// Malformed NAMES_RESP line.
+    /// Malformed `NAMES_RESP` line.
     #[error("found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}")]
-    MalformedNodeNameAndPortLine { line: String },
+    MalformedNamesResponse { line: String },
 
     /// I/O error.
     #[error(transparent)]
@@ -251,7 +155,7 @@ where
     ///
     /// The connection created to the EPMD must be kept as long as the node is a distributed node.
     /// When the connection is closed, the node is automatically unregistered from the EPMD.
-    pub async fn register(mut self, node: NodeInfo) -> Result<(T, Creation), EpmdError> {
+    pub async fn register(mut self, node: NodeEntry) -> Result<(T, Creation), EpmdError> {
         // Request.
         let size = 1 + node.bytes_len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
@@ -295,8 +199,8 @@ where
         }
     }
 
-    /// Gets all registered names from EPMD.
-    pub async fn get_names(mut self) -> Result<Vec<NodeNameAndPort>, EpmdError> {
+    /// Gets all registered nodes (name and port pairs) from EPMD.
+    pub async fn get_names(mut self) -> Result<Vec<(String, u16)>, EpmdError> {
         // Request.
         self.socket.write_u16(1).await?; // Length
         self.socket.write_u8(TAG_NAMES_REQ).await?;
@@ -309,15 +213,14 @@ where
         node_info_text
             .split('\n')
             .filter(|s| !s.is_empty())
-            .map(NodeNameAndPort::from_str)
+            .map(|line| NodeNameAndPort::from_str(line).map(|x| (x.name, x.port)))
             .collect()
     }
 
-    /// Gets the distribution port (and other information) of
-    /// the `node_name` node from EPMD.
+    /// Queries the node which has the given name to EPMD.
     ///
     /// If the node has not been registered in the connected EPMD, this method will return `None`.
-    pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeInfo>, EpmdError> {
+    pub async fn get_node(mut self, node_name: &str) -> Result<Option<NodeEntry>, EpmdError> {
         // Request.
         let size = 1 + node_name.len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
@@ -341,11 +244,11 @@ where
                 return Ok(None);
             }
             code => {
-                return Err(EpmdError::GetNodeInfoError { code });
+                return Err(EpmdError::GetNodeEntryError { code });
             }
         }
 
-        Ok(Some(NodeInfo {
+        Ok(Some(NodeEntry {
             port: self.socket.read_u16().await?,
             node_type: NodeType::try_from(self.socket.read_u8().await?)?,
             protocol: TransportProtocol::try_from(self.socket.read_u8().await?)?,
@@ -403,6 +306,30 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct NodeNameAndPort {
+    name: String,
+    port: u16,
+}
+
+impl FromStr for NodeNameAndPort {
+    type Err = EpmdError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let error = || EpmdError::MalformedNamesResponse { line: s.to_owned() };
+
+        if !s.starts_with("name ") {
+            return Err(error());
+        }
+
+        let s = &s["name ".len()..];
+        let pos = s.find(" at port ").ok_or_else(error)?;
+        let name = s[..pos].to_string();
+        let port = s[pos + " at port ".len()..].parse().map_err(|_| error())?;
+        Ok(Self { name, port })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,24 +369,24 @@ mod tests {
         let erl_node = TestErlangNode::new(node_name).expect("failed to run a test erlang node");
         smol::block_on(async {
             // Get the information of an existing Erlang node.
-            let info = epmd_client()
+            let node = epmd_client()
                 .await
-                .get_node_info(node_name)
+                .get_node(node_name)
                 .await
-                .expect("failed to get node info");
-            let info = info.expect("no such node");
-            assert_eq!(info.name, node_name);
+                .expect("failed to get node");
+            let node = node.expect("no such node");
+            assert_eq!(node.name, node_name);
 
             // Register a new node.
             let client = epmd_client().await;
             let new_node_name = "erl_dist_test_new_node";
-            let new_node = NodeInfo {
+            let new_node = NodeEntry {
                 name: new_node_name.to_owned(),
                 port: 3000,
                 node_type: NodeType::Hidden,
                 protocol: TransportProtocol::TcpIpV4,
-                highest_version: HandshakeProtocolVersion::V6,
-                lowest_version: HandshakeProtocolVersion::V5,
+                highest_version: DistributionProtocolVersion::V6,
+                lowest_version: DistributionProtocolVersion::V5,
                 extra: Vec::new(),
             };
             let (stream, _creation) = client
@@ -468,22 +395,22 @@ mod tests {
                 .expect("failed to register a new node");
 
             // Get the information of the newly added Erlang node.
-            let info = epmd_client()
+            let node = epmd_client()
                 .await
-                .get_node_info(new_node_name)
+                .get_node(new_node_name)
                 .await
-                .expect("failed to get node info");
-            let info = info.expect("no such node");
-            assert_eq!(info.name, new_node_name);
+                .expect("failed to get node");
+            let node = node.expect("no such node");
+            assert_eq!(node.name, new_node_name);
 
             // Deregister the node.
             std::mem::drop(stream);
-            let info = epmd_client()
+            let node = epmd_client()
                 .await
-                .get_node_info(new_node_name)
+                .get_node(new_node_name)
                 .await
-                .expect("failed to get node info");
-            assert!(info.is_none());
+                .expect("failed to get node");
+            assert!(node.is_none());
         });
         std::mem::drop(erl_node);
     }
