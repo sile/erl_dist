@@ -9,7 +9,10 @@
 use crate::node::NodeName;
 use crate::node::NodeType;
 use crate::socket::Socket;
-use crate::{Creation, DistributionProtocolVersion, TransportProtocol};
+use crate::{
+    Creation, TransportProtocol, HIGHEST_DISTRIBUTION_PROTOCOL_VERSION,
+    LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
+};
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
@@ -43,10 +46,10 @@ pub struct NodeEntry {
     pub protocol: TransportProtocol,
 
     /// Highest distribution protocol version that this node can handle.
-    pub highest_version: DistributionProtocolVersion,
+    pub highest_version: u16,
 
     /// Lowest distribution protocol version that this node can handle.
-    pub lowest_version: DistributionProtocolVersion,
+    pub lowest_version: u16,
 
     /// Extra field.
     pub extra: Vec<u8>,
@@ -60,8 +63,8 @@ impl NodeEntry {
             port,
             node_type: NodeType::Normal,
             protocol: TransportProtocol::TcpIpV4,
-            highest_version: DistributionProtocolVersion::V6,
-            lowest_version: DistributionProtocolVersion::V5,
+            highest_version: HIGHEST_DISTRIBUTION_PROTOCOL_VERSION,
+            lowest_version: LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
             extra: Vec::new(),
         }
     }
@@ -73,8 +76,8 @@ impl NodeEntry {
             port,
             node_type: NodeType::Hidden,
             protocol: TransportProtocol::TcpIpV4,
-            highest_version: DistributionProtocolVersion::V6,
-            lowest_version: DistributionProtocolVersion::V5,
+            highest_version: HIGHEST_DISTRIBUTION_PROTOCOL_VERSION,
+            lowest_version: LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
             extra: Vec::new(),
         }
     }
@@ -106,10 +109,6 @@ pub enum EpmdError {
     /// Unknown transport protocol.
     #[error("unknown transport protocol {value}")]
     UnknownTransportProtocol { value: u8 },
-
-    /// Unknown distribution protocol version.
-    #[error("unknown distribution protocol version {value}")]
-    UnknownDistributionProtocolVersion { value: u16 },
 
     /// Too long request.
     #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
@@ -252,8 +251,8 @@ where
             port: self.socket.read_u16().await?,
             node_type: NodeType::try_from(self.socket.read_u8().await?)?,
             protocol: TransportProtocol::try_from(self.socket.read_u8().await?)?,
-            highest_version: self.socket.read_u16().await?.try_into()?,
-            lowest_version: self.socket.read_u16().await?.try_into()?,
+            highest_version: self.socket.read_u16().await?,
+            lowest_version: self.socket.read_u16().await?,
             name: self.socket.read_u16_string().await?,
             extra: self.socket.read_u16_bytes().await?,
         }))
@@ -341,11 +340,13 @@ mod tests {
     }
 
     impl TestErlangNode {
-        fn new(name: &str) -> std::io::Result<Self> {
+        async fn new(name: &str) -> anyhow::Result<Self> {
             let child = Command::new("erl")
                 .args(&["-sname", name, "-noshell"])
                 .spawn()?;
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            while epmd_client().await.get_node(name).await?.is_none() {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
             Ok(Self { child })
         }
     }
@@ -366,8 +367,11 @@ mod tests {
     #[test]
     fn epmd_client_works() {
         let node_name = "erl_dist_test";
-        let erl_node = TestErlangNode::new(node_name).expect("failed to run a test erlang node");
         smol::block_on(async {
+            let erl_node = TestErlangNode::new(node_name)
+                .await
+                .expect("failed to run a test erlang node");
+
             // Get the information of an existing Erlang node.
             let node = epmd_client()
                 .await
@@ -380,15 +384,7 @@ mod tests {
             // Register a new node.
             let client = epmd_client().await;
             let new_node_name = "erl_dist_test_new_node";
-            let new_node = NodeEntry {
-                name: new_node_name.to_owned(),
-                port: 3000,
-                node_type: NodeType::Hidden,
-                protocol: TransportProtocol::TcpIpV4,
-                highest_version: DistributionProtocolVersion::V6,
-                lowest_version: DistributionProtocolVersion::V5,
-                extra: Vec::new(),
-            };
+            let new_node = NodeEntry::new_hidden(new_node_name, 3000);
             let (stream, _creation) = client
                 .register(new_node)
                 .await
@@ -411,7 +407,8 @@ mod tests {
                 .await
                 .expect("failed to get node");
             assert!(node.is_none());
+
+            std::mem::drop(erl_node);
         });
-        std::mem::drop(erl_node);
     }
 }

@@ -16,6 +16,9 @@ pub mod node;
 mod channel;
 mod socket;
 
+pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
+pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
+
 /// Incarnation identifier of a node.
 ///
 /// [`Creation`] is used by the node to create its pids, ports and references.
@@ -32,34 +35,6 @@ impl Creation {
     /// Gets the value.
     pub const fn get(self) -> u32 {
         self.0
-    }
-}
-
-/// Distribution protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum DistributionProtocolVersion {
-    /// Version 5.
-    V5 = 5,
-
-    /// Version 6 (introduced in OTP 23).
-    V6 = 6,
-}
-
-impl std::fmt::Display for DistributionProtocolVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", *self as u16)
-    }
-}
-
-impl TryFrom<u16> for DistributionProtocolVersion {
-    type Error = crate::epmd::EpmdError; // TODO
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            5 => Ok(Self::V5),
-            6 => Ok(Self::V6),
-            _ => Err(crate::epmd::EpmdError::UnknownDistributionProtocolVersion { value }),
-        }
     }
 }
 
