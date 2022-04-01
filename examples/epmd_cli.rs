@@ -8,7 +8,7 @@
 //! $ cargo run --example epmd_cli node_info foo
 //! ```
 use clap::{Parser, Subcommand};
-use erl_dist::epmd::{EpmdClient, HandshakeProtocolVersion, NodeInfo, NodeType, TransportProtocol};
+use erl_dist::epmd::{EpmdClient, DistributionProtocolVersion, NodeInfo, NodeType, TransportProtocol};
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -99,8 +99,8 @@ fn main() -> anyhow::Result<()> {
                         NodeType::Normal
                     },
                     protocol: TransportProtocol::TcpIpV4,
-                    highest_version: HandshakeProtocolVersion::V6,
-                    lowest_version: HandshakeProtocolVersion::V5,
+                    highest_version: DistributionProtocolVersion::V6,
+                    lowest_version: DistributionProtocolVersion::V5,
                     extra: Vec::new(),
                 };
                 let (_, creation) = client.register(node).await?;

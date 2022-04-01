@@ -5,8 +5,9 @@
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details about the protocol.
+use crate::node::NodeType;
 use crate::socket::Socket;
-use crate::Creation;
+use crate::{Creation, DistributionProtocolVersion, TransportProtocol};
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
@@ -24,104 +25,6 @@ const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
 // TODO: NodeName (with 255 bytes limit)
 
-/// Node name and port.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct NodeNameAndPort {
-    /// Node name.
-    pub name: String,
-
-    /// Listening port of this node.
-    pub port: u16,
-}
-
-impl FromStr for NodeNameAndPort {
-    type Err = EpmdError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let error = || EpmdError::MalformedNodeNameAndPortLine { line: s.to_owned() };
-
-        if !s.starts_with("name ") {
-            return Err(error());
-        }
-
-        let s = &s["name ".len()..];
-        let pos = s.find(" at port ").ok_or_else(error)?;
-        let name = s[..pos].to_string();
-        let port = s[pos + " at port ".len()..].parse().map_err(|_| error())?;
-        Ok(Self { name, port })
-    }
-}
-
-/// Handshake protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum HandshakeProtocolVersion {
-    /// Version 5.
-    V5 = 5,
-
-    /// Version 6 (introduced in OTP 23).
-    V6 = 6,
-}
-
-impl std::fmt::Display for HandshakeProtocolVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", *self as u16)
-    }
-}
-
-impl TryFrom<u16> for HandshakeProtocolVersion {
-    type Error = EpmdError;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            5 => Ok(Self::V5),
-            6 => Ok(Self::V6),
-            _ => Err(EpmdError::UnknownVersion { value }),
-        }
-    }
-}
-
-/// Type of a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum NodeType {
-    /// Hidden node (C-node).
-    Hidden = 72,
-
-    /// Normal Erlang node.
-    Normal = 77,
-}
-
-impl TryFrom<u8> for NodeType {
-    type Error = EpmdError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            72 => Ok(Self::Hidden),
-            77 => Ok(Self::Normal),
-            _ => Err(EpmdError::UnknownNodeType { value }),
-        }
-    }
-}
-
-/// Protocol for communicating with a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum TransportProtocol {
-    /// TCP/IPv4.
-    TcpIpV4 = 0,
-}
-
-impl TryFrom<u8> for TransportProtocol {
-    type Error = EpmdError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::TcpIpV4),
-            _ => Err(EpmdError::UnknownProtocol { value }),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct NodeInfoBuilder {
     node: NodeInfo,
@@ -135,8 +38,8 @@ impl NodeInfoBuilder {
                 port,
                 node_type: NodeType::Normal,
                 protocol: TransportProtocol::TcpIpV4,
-                highest_version: HandshakeProtocolVersion::V6,
-                lowest_version: HandshakeProtocolVersion::V5,
+                highest_version: DistributionProtocolVersion::V6,
+                lowest_version: DistributionProtocolVersion::V5,
                 extra: Vec::new(),
             },
         }
@@ -167,8 +70,8 @@ pub struct NodeInfo {
     /// The protocol for communicating with the node.
     pub protocol: TransportProtocol,
 
-    pub highest_version: HandshakeProtocolVersion,
-    pub lowest_version: HandshakeProtocolVersion,
+    pub highest_version: DistributionProtocolVersion,
+    pub lowest_version: DistributionProtocolVersion,
 
     /// Extra field.
     pub extra: Vec<u8>,
@@ -296,7 +199,7 @@ where
     }
 
     /// Gets all registered names from EPMD.
-    pub async fn get_names(mut self) -> Result<Vec<NodeNameAndPort>, EpmdError> {
+    pub async fn get_names(mut self) -> Result<Vec<(String, u16)>, EpmdError> {
         // Request.
         self.socket.write_u16(1).await?; // Length
         self.socket.write_u8(TAG_NAMES_REQ).await?;
@@ -309,7 +212,7 @@ where
         node_info_text
             .split('\n')
             .filter(|s| !s.is_empty())
-            .map(NodeNameAndPort::from_str)
+            .map(|line| NodeNameAndPort::from_str(line).map(|x| (x.name, x.port)))
             .collect()
     }
 
@@ -403,6 +306,30 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct NodeNameAndPort {
+    name: String,
+    port: u16,
+}
+
+impl FromStr for NodeNameAndPort {
+    type Err = EpmdError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let error = || EpmdError::MalformedNodeNameAndPortLine { line: s.to_owned() };
+
+        if !s.starts_with("name ") {
+            return Err(error());
+        }
+
+        let s = &s["name ".len()..];
+        let pos = s.find(" at port ").ok_or_else(error)?;
+        let name = s[..pos].to_string();
+        let port = s[pos + " at port ".len()..].parse().map_err(|_| error())?;
+        Ok(Self { name, port })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,8 +385,8 @@ mod tests {
                 port: 3000,
                 node_type: NodeType::Hidden,
                 protocol: TransportProtocol::TcpIpV4,
-                highest_version: HandshakeProtocolVersion::V6,
-                lowest_version: HandshakeProtocolVersion::V5,
+                highest_version: DistributionProtocolVersion::V6,
+                lowest_version: DistributionProtocolVersion::V5,
                 extra: Vec::new(),
             };
             let (stream, _creation) = client

@@ -5,10 +5,11 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
-use crate::epmd::{HandshakeProtocolVersion, NodeInfo};
+use crate::epmd::NodeInfo;
 use crate::node::NodeName;
 use crate::socket::Socket;
 use crate::Creation;
+use crate::DistributionProtocolVersion;
 use futures::io::{AsyncRead, AsyncWrite};
 
 pub use self::flags::DistributionFlags;
@@ -42,10 +43,10 @@ struct Digest([u8; 16]);
 pub enum HandshakeError {
     #[error("no available version: self={self_lowest}..={self_highest}, peer={peer_lowest}..={peer_highest}")]
     VersionMismatch {
-        self_highest: HandshakeProtocolVersion,
-        self_lowest: HandshakeProtocolVersion,
-        peer_highest: HandshakeProtocolVersion,
-        peer_lowest: HandshakeProtocolVersion,
+        self_highest: DistributionProtocolVersion,
+        self_lowest: DistributionProtocolVersion,
+        peer_highest: DistributionProtocolVersion,
+        peer_lowest: DistributionProtocolVersion,
     },
 
     #[error("peer already has an ongoing handshake with this node")]
@@ -140,7 +141,7 @@ impl Handshake {
     fn check_available_highest_version(
         &self,
         peer_node: &NodeInfo,
-    ) -> Result<HandshakeProtocolVersion, HandshakeError> {
+    ) -> Result<DistributionProtocolVersion, HandshakeError> {
         let self_version_range = self.self_node.lowest_version..=self.self_node.highest_version;
         let peer_version_range = peer_node.lowest_version..=peer_node.highest_version;
         if self_version_range.contains(&peer_node.highest_version) {
@@ -300,7 +301,7 @@ where
 #[derive(Debug)]
 struct HandshakeClient<T> {
     socket: Socket<T>,
-    version: HandshakeProtocolVersion,
+    version: DistributionProtocolVersion,
     this: NodeInfo,
     _peer: NodeInfo,
     flags: DistributionFlags,
@@ -338,7 +339,7 @@ where
         }
 
         let (peer_name, peer_flags, peer_challenge, peer_creation) = self.recv_challenge().await?;
-        if self.version == HandshakeProtocolVersion::V5 && peer_creation.is_some() {
+        if self.version == DistributionProtocolVersion::V5 && peer_creation.is_some() {
             self.send_complement().await?;
         }
 
@@ -433,13 +434,13 @@ where
     async fn send_name(&mut self) -> Result<(), HandshakeError> {
         let mut writer = self.socket.message_writer();
         match self.version {
-            HandshakeProtocolVersion::V5 => {
+            DistributionProtocolVersion::V5 => {
                 writer.write_u8(b'n')?;
                 writer.write_u16(self.version as u16)?;
                 writer.write_u32(self.flags.bits() as u32)?;
                 writer.write_all(self.this.name.as_bytes())?;
             }
-            HandshakeProtocolVersion::V6 => {
+            DistributionProtocolVersion::V6 => {
                 writer.write_u8(b'N')?;
                 writer.write_u64(self.flags.bits())?;
                 writer.write_u32(self.creation.get())?;
