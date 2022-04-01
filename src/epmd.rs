@@ -4,7 +4,9 @@
 //! it provides name resolution functionalities for distributed erlang nodes.
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
-//! for more details about the protocol.
+//! for more details.
+#[cfg(doc)]
+use crate::node::NodeName;
 use crate::node::NodeType;
 use crate::socket::Socket;
 use crate::{Creation, DistributionProtocolVersion, TransportProtocol};
@@ -23,22 +25,27 @@ const TAG_ALIVE2_REQ: u8 = 120;
 const TAG_ALIVE2_RESP: u8 = 121;
 const TAG_PORT_PLEASE2_REQ: u8 = 122;
 
-/// An node entry registered in EPMD.
-#[derive(Debug, Clone)]
+/// Entry of a node registered in EPMD.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NodeEntry {
-    /// The node name.
+    /// Node name.
+    ///
+    /// Note that it differs from [`NodeName`] as this name doesn't contain the host part.
     pub name: String,
 
-    /// The port number on which the node accept connection requests.
+    /// Port number on which this node accepts connection requests.
     pub port: u16,
 
-    /// The node type.
+    /// Node type.
     pub node_type: NodeType,
 
-    /// The protocol for communicating with the node.
+    /// Transport protocol to communicate with this node.
     pub protocol: TransportProtocol,
 
+    /// Highest distribution protocol version that this node can handle.
     pub highest_version: DistributionProtocolVersion,
+
+    /// Lowest distribution protocol version that this node can handle.
     pub lowest_version: DistributionProtocolVersion,
 
     /// Extra field.
@@ -46,6 +53,7 @@ pub struct NodeEntry {
 }
 
 impl NodeEntry {
+    /// Makes a [`NodeEntry`] instance for a normal node.
     pub fn new(name: &str, port: u16) -> Self {
         Self {
             name: name.to_owned(),
@@ -58,6 +66,7 @@ impl NodeEntry {
         }
     }
 
+    /// Makes a [`NodeEntry`] instance for a hidden node.
     pub fn new_hidden(name: &str, port: u16) -> Self {
         Self {
             name: name.to_owned(),
@@ -81,7 +90,7 @@ impl NodeEntry {
     }
 }
 
-/// EPMD related errors.
+/// Possible errors.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 #[allow(missing_docs)]
@@ -94,29 +103,29 @@ pub enum EpmdError {
     #[error("unknown node type {value}")]
     UnknownNodeType { value: u8 },
 
-    /// Unknown protocol.
-    #[error("unknown protocol {value}")]
-    UnknownProtocol { value: u8 },
+    /// Unknown transport protocol.
+    #[error("unknown transport protocol {value}")]
+    UnknownTransportProtocol { value: u8 },
 
     /// Unknown distribution protocol version.
     #[error("unknown distribution protocol version {value}")]
-    UnknownVersion { value: u16 },
+    UnknownDistributionProtocolVersion { value: u16 },
 
     /// Too long request.
     #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
     TooLongRequest { size: usize },
 
-    /// PORT_PLEASE2_REQ request failure.
+    /// `PORT_PLEASE2_REQ` request failure.
     #[error("EPMD responded an error code {code} against a PORT_PLEASE2_REQ request")]
     GetNodeEntryError { code: u8 },
 
-    /// ALIVE2_REQ request failure.
+    /// `ALIVE2_REQ` request failure.
     #[error("EPMD responded an error code {code} against an ALIVE2_REQ request")]
     RegisterNodeError { code: u8 },
 
-    /// Malformed NAMES_RESP line.
+    /// Malformed `NAMES_RESP` line.
     #[error("found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}")]
-    MalformedNodeNameAndPortLine { line: String },
+    MalformedNamesResponse { line: String },
 
     /// I/O error.
     #[error(transparent)]
@@ -190,7 +199,7 @@ where
         }
     }
 
-    /// Gets all registered names from EPMD.
+    /// Gets all registered nodes (name and port pairs) from EPMD.
     pub async fn get_names(mut self) -> Result<Vec<(String, u16)>, EpmdError> {
         // Request.
         self.socket.write_u16(1).await?; // Length
@@ -208,11 +217,10 @@ where
             .collect()
     }
 
-    /// Gets the distribution port (and other information) of
-    /// the `node_name` node from EPMD.
+    /// Queries the node which has the given name to EPMD.
     ///
     /// If the node has not been registered in the connected EPMD, this method will return `None`.
-    pub async fn get_node_info(mut self, node_name: &str) -> Result<Option<NodeEntry>, EpmdError> {
+    pub async fn get_node(mut self, node_name: &str) -> Result<Option<NodeEntry>, EpmdError> {
         // Request.
         let size = 1 + node_name.len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
@@ -308,7 +316,7 @@ impl FromStr for NodeNameAndPort {
     type Err = EpmdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let error = || EpmdError::MalformedNodeNameAndPortLine { line: s.to_owned() };
+        let error = || EpmdError::MalformedNamesResponse { line: s.to_owned() };
 
         if !s.starts_with("name ") {
             return Err(error());
@@ -361,13 +369,13 @@ mod tests {
         let erl_node = TestErlangNode::new(node_name).expect("failed to run a test erlang node");
         smol::block_on(async {
             // Get the information of an existing Erlang node.
-            let info = epmd_client()
+            let node = epmd_client()
                 .await
-                .get_node_info(node_name)
+                .get_node(node_name)
                 .await
-                .expect("failed to get node info");
-            let info = info.expect("no such node");
-            assert_eq!(info.name, node_name);
+                .expect("failed to get node");
+            let node = node.expect("no such node");
+            assert_eq!(node.name, node_name);
 
             // Register a new node.
             let client = epmd_client().await;
@@ -387,22 +395,22 @@ mod tests {
                 .expect("failed to register a new node");
 
             // Get the information of the newly added Erlang node.
-            let info = epmd_client()
+            let node = epmd_client()
                 .await
-                .get_node_info(new_node_name)
+                .get_node(new_node_name)
                 .await
-                .expect("failed to get node info");
-            let info = info.expect("no such node");
-            assert_eq!(info.name, new_node_name);
+                .expect("failed to get node");
+            let node = node.expect("no such node");
+            assert_eq!(node.name, new_node_name);
 
             // Deregister the node.
             std::mem::drop(stream);
-            let info = epmd_client()
+            let node = epmd_client()
                 .await
-                .get_node_info(new_node_name)
+                .get_node(new_node_name)
                 .await
-                .expect("failed to get node info");
-            assert!(info.is_none());
+                .expect("failed to get node");
+            assert!(node.is_none());
         });
         std::mem::drop(erl_node);
     }

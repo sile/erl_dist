@@ -58,7 +58,7 @@ impl TryFrom<u16> for DistributionProtocolVersion {
         match value {
             5 => Ok(Self::V5),
             6 => Ok(Self::V6),
-            _ => Err(crate::epmd::EpmdError::UnknownVersion { value }),
+            _ => Err(crate::epmd::EpmdError::UnknownDistributionProtocolVersion { value }),
         }
     }
 }
@@ -77,7 +77,7 @@ impl TryFrom<u8> for TransportProtocol {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::TcpIpV4),
-            _ => Err(crate::epmd::EpmdError::UnknownProtocol { value }),
+            _ => Err(crate::epmd::EpmdError::UnknownTransportProtocol { value }),
         }
     }
 }

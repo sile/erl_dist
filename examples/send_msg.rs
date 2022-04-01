@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         let peer_node = args
             .peer_epmd_client()
             .await?
-            .get_node_info(&args.peer_node.name())
+            .get_node(&args.peer_node.name())
             .await?
             .ok_or_else(|| anyhow::anyhow!("no such node: {}", args.peer_node))?;
         println!("Got peer node info: {:?}", peer_node);

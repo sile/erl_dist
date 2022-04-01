@@ -62,15 +62,15 @@ fn main() -> anyhow::Result<()> {
             }
             Command::NodeEntry { node } => {
                 // 'PORT_PLEASE2_REQ'
-                if let Some(info) = client.get_node_info(&node).await? {
+                if let Some(node) = client.get_node(&node).await? {
                     let result = serde_json::json!({
-                        "name": info.name,
-                        "port": info.port,
-                        "node_type": format!("{:?} ({})", info.node_type, info.node_type as u8),
-                        "protocol": format!("{:?} ({})", info.protocol, info.protocol as u8),
-                        "highest_version": info.highest_version as u16,
-                        "lowest_version": info.lowest_version as u16,
-                        "extra": info.extra
+                        "name": node.name,
+                        "port": node.port,
+                        "node_type": format!("{:?} ({})", node.node_type, node.node_type as u8),
+                        "protocol": format!("{:?} ({})", node.protocol, node.protocol as u8),
+                        "highest_version": node.highest_version as u16,
+                        "lowest_version": node.lowest_version as u16,
+                         "extra": node.extra
                     });
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 } else {
