@@ -45,6 +45,10 @@ impl NodeName {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.name.len() + 1 + self.host.len()
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }

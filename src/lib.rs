@@ -16,6 +16,7 @@ pub mod node;
 mod channel;
 mod socket;
 
+// TODO
 /// Protocol for communicating with a distributed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
