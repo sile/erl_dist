@@ -533,41 +533,41 @@ mod tests {
     use super::*;
     use futures::StreamExt;
 
-    #[test]
-    fn client_side_handshake_works() {
-        let peer_name = "erl_dist_test";
-        smol::block_on(async {
-            let erl_node = crate::tests::TestErlangNode::new(peer_name)
-                .await
-                .expect("failed to run a test erlang node");
+    // #[test]
+    // fn client_side_handshake_works() {
+    //     let peer_name = "erl_dist_test";
+    //     smol::block_on(async {
+    //         let erl_node = crate::tests::TestErlangNode::new(peer_name)
+    //             .await
+    //             .expect("failed to run a test erlang node");
 
-            let peer_entry = crate::tests::epmd_client()
-                .await
-                .get_node(peer_name)
-                .await
-                .expect("failed to get node");
-            let peer_entry = peer_entry.expect("no such node");
+    //         let peer_entry = crate::tests::epmd_client()
+    //             .await
+    //             .get_node(peer_name)
+    //             .await
+    //             .expect("failed to get node");
+    //         let peer_entry = peer_entry.expect("no such node");
 
-            let connection = smol::net::TcpStream::connect(("localhost", peer_entry.port))
-                .await
-                .expect("failed to connect");
-            let local_node = LocalNode::new("foo@localhost".parse().unwrap(), Creation::random());
-            let mut handshake =
-                ClientSideHandshake::new(connection, local_node, crate::tests::COOKIE);
-            let status = handshake
-                .execute_send_name()
-                .await
-                .expect("failed to execute send name");
-            assert_eq!(status, HandshakeStatus::Ok);
-            let (_, peer_node) = handshake
-                .execute_rest(true)
-                .await
-                .expect("failed to execute handshake");
-            assert_eq!(peer_entry.name, peer_node.name.name());
+    //         let connection = smol::net::TcpStream::connect(("localhost", peer_entry.port))
+    //             .await
+    //             .expect("failed to connect");
+    //         let local_node = LocalNode::new("foo@localhost".parse().unwrap(), Creation::random());
+    //         let mut handshake =
+    //             ClientSideHandshake::new(connection, local_node, crate::tests::COOKIE);
+    //         let status = handshake
+    //             .execute_send_name()
+    //             .await
+    //             .expect("failed to execute send name");
+    //         assert_eq!(status, HandshakeStatus::Ok);
+    //         let (_, peer_node) = handshake
+    //             .execute_rest(true)
+    //             .await
+    //             .expect("failed to execute handshake");
+    //         assert_eq!(peer_entry.name, peer_node.name.name());
 
-            std::mem::drop(erl_node);
-        });
-    }
+    //         std::mem::drop(erl_node);
+    //     });
+    // }
 
     // #[test]
     // fn server_side_handshake_works() {
