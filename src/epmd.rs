@@ -5,10 +5,10 @@
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details.
+use crate::io::Connection;
 use crate::node::Creation;
 #[cfg(doc)]
 use crate::node::NodeName;
-use crate::socket::Socket;
 use crate::{HIGHEST_DISTRIBUTION_PROTOCOL_VERSION, LOWEST_DISTRIBUTION_PROTOCOL_VERSION};
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
@@ -123,7 +123,7 @@ pub enum EpmdError {
 /// EPMD client.
 #[derive(Debug)]
 pub struct EpmdClient<T> {
-    socket: Socket<T>,
+    connection: Connection<T>,
 }
 
 impl<T> EpmdClient<T>
@@ -132,10 +132,10 @@ where
 {
     /// Makes a new [`EpmdClient`] instance.
     ///
-    /// `socket` is a connection to communicate with the target EPMD server.
-    pub fn new(socket: T) -> Self {
+    /// `connection` is a connection to communicate with the target EPMD server.
+    pub fn new(connection: T) -> Self {
         Self {
-            socket: Socket::new(socket),
+            connection: Connection::new(connection),
         }
     }
 
@@ -147,38 +147,42 @@ where
         // Request.
         let size = 1 + node.bytes_len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
-        self.socket.write_u16(size).await?;
-        self.socket.write_u8(TAG_ALIVE2_REQ).await?;
-        self.socket.write_u16(node.port).await?;
-        self.socket.write_u8(node.node_type.into()).await?;
-        self.socket.write_u8(node.protocol.into()).await?;
-        self.socket.write_u16(node.highest_version as u16).await?;
-        self.socket.write_u16(node.lowest_version as u16).await?;
-        self.socket.write_u16(node.name.len() as u16).await?;
-        self.socket.write_all(node.name.as_bytes()).await?;
-        self.socket.write_u16(node.extra.len() as u16).await?;
-        self.socket.write_all(&node.extra).await?;
-        self.socket.flush().await?;
+        self.connection.write_u16(size).await?;
+        self.connection.write_u8(TAG_ALIVE2_REQ).await?;
+        self.connection.write_u16(node.port).await?;
+        self.connection.write_u8(node.node_type.into()).await?;
+        self.connection.write_u8(node.protocol.into()).await?;
+        self.connection
+            .write_u16(node.highest_version as u16)
+            .await?;
+        self.connection
+            .write_u16(node.lowest_version as u16)
+            .await?;
+        self.connection.write_u16(node.name.len() as u16).await?;
+        self.connection.write_all(node.name.as_bytes()).await?;
+        self.connection.write_u16(node.extra.len() as u16).await?;
+        self.connection.write_all(&node.extra).await?;
+        self.connection.flush().await?;
 
         // Response.
-        match self.socket.read_u8().await? {
+        match self.connection.read_u8().await? {
             TAG_ALIVE2_RESP => {
-                match self.socket.read_u8().await? {
+                match self.connection.read_u8().await? {
                     0 => {}
                     code => return Err(EpmdError::RegisterNodeError { code }),
                 }
 
-                let creation = Creation::new(u32::from(self.socket.read_u16().await?));
-                Ok((self.socket.into_inner(), creation))
+                let creation = Creation::new(u32::from(self.connection.read_u16().await?));
+                Ok((self.connection.into_inner(), creation))
             }
             TAG_ALIVE2_X_RESP => {
-                match self.socket.read_u8().await? {
+                match self.connection.read_u8().await? {
                     0 => {}
                     code => return Err(EpmdError::RegisterNodeError { code }),
                 }
 
-                let creation = Creation::new(self.socket.read_u32().await?);
-                Ok((self.socket.into_inner(), creation))
+                let creation = Creation::new(self.connection.read_u32().await?);
+                Ok((self.connection.into_inner(), creation))
             }
             tag => Err(EpmdError::UnknownResponseTag {
                 request: "ALIVE2_REQ",
@@ -190,13 +194,13 @@ where
     /// Gets all registered nodes (name and port pairs) from EPMD.
     pub async fn get_names(mut self) -> Result<Vec<(String, u16)>, EpmdError> {
         // Request.
-        self.socket.write_u16(1).await?; // Length
-        self.socket.write_u8(TAG_NAMES_REQ).await?;
-        self.socket.flush().await?;
+        self.connection.write_u16(1).await?; // Length
+        self.connection.write_u8(TAG_NAMES_REQ).await?;
+        self.connection.flush().await?;
 
         // Response.
-        let _epmd_port = self.socket.read_u32().await?;
-        let node_info_text = self.socket.read_string().await?;
+        let _epmd_port = self.connection.read_u32().await?;
+        let node_info_text = self.connection.read_string().await?;
 
         node_info_text
             .split('\n')
@@ -212,13 +216,13 @@ where
         // Request.
         let size = 1 + node_name.len();
         let size = u16::try_from(size).map_err(|_| EpmdError::TooLongRequest { size })?;
-        self.socket.write_u16(size).await?;
-        self.socket.write_u8(TAG_PORT_PLEASE2_REQ).await?;
-        self.socket.write_all(node_name.as_bytes()).await?;
-        self.socket.flush().await?;
+        self.connection.write_u16(size).await?;
+        self.connection.write_u8(TAG_PORT_PLEASE2_REQ).await?;
+        self.connection.write_all(node_name.as_bytes()).await?;
+        self.connection.flush().await?;
 
         // Response.
-        let tag = self.socket.read_u8().await?;
+        let tag = self.connection.read_u8().await?;
         if tag != TAG_PORT2_RESP {
             return Err(EpmdError::UnknownResponseTag {
                 request: "NAMES_REQ",
@@ -226,7 +230,7 @@ where
             });
         }
 
-        match self.socket.read_u8().await? {
+        match self.connection.read_u8().await? {
             0 => {}
             1 => {
                 return Ok(None);
@@ -237,13 +241,13 @@ where
         }
 
         Ok(Some(NodeEntry {
-            port: self.socket.read_u16().await?,
-            node_type: self.socket.read_u8().await?.into(),
-            protocol: self.socket.read_u8().await?.into(),
-            highest_version: self.socket.read_u16().await?,
-            lowest_version: self.socket.read_u16().await?,
-            name: self.socket.read_u16_string().await?,
-            extra: self.socket.read_u16_bytes().await?,
+            port: self.connection.read_u16().await?,
+            node_type: self.connection.read_u8().await?.into(),
+            protocol: self.connection.read_u8().await?.into(),
+            highest_version: self.connection.read_u16().await?,
+            lowest_version: self.connection.read_u16().await?,
+            name: self.connection.read_u16_string().await?,
+            extra: self.connection.read_u16_bytes().await?,
         }))
     }
 
@@ -255,12 +259,12 @@ where
     /// If EPMD is killed, this method returns `"OK"`.
     pub async fn kill(mut self) -> Result<String, EpmdError> {
         // Request.
-        self.socket.write_u16(1).await?;
-        self.socket.write_u8(TAG_KILL_REQ).await?;
-        self.socket.flush().await?;
+        self.connection.write_u16(1).await?;
+        self.connection.write_u8(TAG_KILL_REQ).await?;
+        self.connection.flush().await?;
 
         // Response.
-        let result = self.socket.read_string().await?;
+        let result = self.connection.read_string().await?;
         Ok(result)
     }
 
@@ -283,13 +287,13 @@ where
     /// ```
     pub async fn dump(mut self) -> Result<String, EpmdError> {
         // Request.
-        self.socket.write_u16(1).await?;
-        self.socket.write_u8(TAG_DUMP_REQ).await?;
-        self.socket.flush().await?;
+        self.connection.write_u16(1).await?;
+        self.connection.write_u8(TAG_DUMP_REQ).await?;
+        self.connection.flush().await?;
 
         // Response.
-        let _epmd_port = self.socket.read_u32().await?;
-        let info = self.socket.read_string().await?;
+        let _epmd_port = self.connection.read_u32().await?;
+        let info = self.connection.read_string().await?;
         Ok(info)
     }
 }
