@@ -5,8 +5,8 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
+use crate::io::Connection;
 use crate::node::{Creation, LocalNode, NodeName, PeerNode};
-use crate::socket::Socket;
 use crate::DistributionFlags;
 use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
@@ -17,7 +17,7 @@ pub struct ClientSideHandshake<T> {
     local_node: LocalNode,
     local_challenge: Challenge,
     cookie: String,
-    socket: Socket<T>,
+    connection: Connection<T>,
     send_name_status: Option<HandshakeStatus>,
     may_need_complement: bool,
 }
@@ -32,7 +32,7 @@ where
             local_node,
             local_challenge: Challenge::new(),
             cookie: cookie.to_owned(),
-            socket: Socket::new(connection),
+            connection: Connection::new(connection),
             send_name_status: None,
             may_need_complement: false,
         }
@@ -90,12 +90,12 @@ where
         self.send_challenge_reply(peer_challenge).await?;
         self.recv_challenge_ack().await?;
 
-        let connection = self.socket.into_inner();
+        let connection = self.connection.into_inner();
         Ok((connection, peer_node))
     }
 
     async fn send_name(&mut self, protocol_version: u16) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         match protocol_version {
             5 => {
                 writer.write_u8(b'n')?;
@@ -120,7 +120,7 @@ where
     }
 
     async fn recv_status(&mut self) -> Result<HandshakeStatus, HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
+        let mut reader = self.connection.handshake_message_reader().await?;
         let tag = reader.read_u8().await?;
         if tag != b's' {
             return Err(HandshakeError::UnexpectedTag {
@@ -155,14 +155,14 @@ where
     }
 
     async fn send_status(&mut self, status: &str) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         writer.write_u8(b's')?;
         writer.write_all(status.as_bytes())?;
         Ok(())
     }
 
     async fn recv_challenge(&mut self) -> Result<(PeerNode, Challenge), HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
+        let mut reader = self.connection.handshake_message_reader().await?;
         let (node, challenge) = match reader.read_u8().await? {
             b'n' => {
                 let version = reader.read_u16().await?;
@@ -204,7 +204,7 @@ where
     }
 
     async fn send_complement(&mut self) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         writer.write_u8(b'c')?;
         writer.write_u32((self.local_node.flags.bits() >> 32) as u32)?;
         writer.write_u32(self.local_node.creation.get())?;
@@ -216,7 +216,7 @@ where
         &mut self,
         peer_challenge: Challenge,
     ) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         writer.write_u8(b'r')?;
         writer.write_u32(self.local_challenge.0)?;
         writer.write_all(&peer_challenge.digest(&self.cookie).0)?;
@@ -225,7 +225,7 @@ where
     }
 
     async fn recv_challenge_ack(&mut self) -> Result<(), HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
+        let mut reader = self.connection.handshake_message_reader().await?;
         let tag = reader.read_u8().await?;
         if tag != b'a' {
             return Err(HandshakeError::UnexpectedTag {
@@ -251,7 +251,7 @@ pub struct ServerSideHandshake<T> {
     local_node: LocalNode,
     local_challenge: Challenge,
     cookie: String,
-    socket: Socket<T>,
+    connection: Connection<T>,
     peer_node: Option<PeerNode>,
 }
 
@@ -265,7 +265,7 @@ where
             local_node,
             local_challenge: Challenge::new(),
             cookie: cookie.to_owned(),
-            socket: Socket::new(connection),
+            connection: Connection::new(connection),
             peer_node: None,
         }
     }
@@ -279,7 +279,7 @@ where
     /// the peer requested a dynamic node name. If the value is `true` and
     /// you want to continue the handshake, you need to use [`HandshakeStatus::Named`] for the reply.
     pub async fn execute_recv_name(&mut self) -> Result<(NodeName, bool), HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
+        let mut reader = self.connection.handshake_message_reader().await?;
         let tag = reader.read_u8().await?;
         let node = match tag {
             b'n' => {
@@ -352,12 +352,12 @@ where
         self.send_challenge_ack(peer_challenge).await?;
 
         let peer_node = self.peer_node.take().expect("unreachable");
-        let connection = self.socket.into_inner();
+        let connection = self.connection.into_inner();
         Ok((connection, peer_node))
     }
 
     async fn send_status(&mut self, status: HandshakeStatus) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         writer.write_u8(b's')?;
         match &status {
             HandshakeStatus::Ok => writer.write_all(b"ok")?,
@@ -384,7 +384,7 @@ where
         &mut self,
         peer_flags: DistributionFlags,
     ) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         if peer_flags.contains(DistributionFlags::HANDSHAKE_23) {
             writer.write_u8(b'N')?;
             writer.write_u64(self.local_node.flags.bits())?;
@@ -404,7 +404,7 @@ where
     }
 
     async fn recv_complement(&mut self) -> Result<(), HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
+        let mut reader = self.connection.handshake_message_reader().await?;
         let tag = reader.read_u8().await?;
         if tag != b'c' {
             return Err(HandshakeError::UnexpectedTag {
@@ -425,7 +425,7 @@ where
     }
 
     async fn recv_challenge_reply(&mut self) -> Result<Challenge, HandshakeError> {
-        let mut reader = self.socket.message_reader().await?;
+        let mut reader = self.connection.handshake_message_reader().await?;
         let tag = reader.read_u8().await?;
         if tag != b'r' {
             return Err(HandshakeError::UnexpectedTag {
@@ -449,7 +449,7 @@ where
         &mut self,
         peer_challenge: Challenge,
     ) -> Result<(), HandshakeError> {
-        let mut writer = self.socket.message_writer();
+        let mut writer = self.connection.handshake_message_writer();
         writer.write_u8(b'a')?;
         writer.write_all(&peer_challenge.digest(&self.cookie).0)?;
         writer.finish().await?;

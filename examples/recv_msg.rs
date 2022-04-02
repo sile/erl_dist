@@ -46,7 +46,7 @@ fn main() -> anyhow::Result<()> {
         let local_node_entry =
             erl_dist::epmd::NodeEntry::new_hidden(args.local_node.name(), listening_port);
 
-        let (keepalive_socket, creation) = args
+        let (keepalive_connection, creation) = args
             .local_epmd_client()
             .await?
             .register(local_node_entry)
@@ -71,7 +71,7 @@ fn main() -> anyhow::Result<()> {
             .detach();
         }
 
-        std::mem::drop(keepalive_socket);
+        std::mem::drop(keepalive_connection);
         Ok(())
     })
 }

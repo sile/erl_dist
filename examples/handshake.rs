@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
         let local_node =
             erl_dist::epmd::NodeEntry::new_hidden(args.local_node.name(), dummy_listening_port);
 
-        let (keepalive_socket, creation) = args
+        let (keepalive_connection, creation) = args
             .local_epmd_client()
             .await?
             .register(local_node.clone())
@@ -73,7 +73,7 @@ fn main() -> anyhow::Result<()> {
         let (_, peer_node) = handshake.execute_rest(true).await?;
         println!("Handshake finished: peer={:?}", peer_node);
 
-        std::mem::drop(keepalive_socket);
+        std::mem::drop(keepalive_connection);
         Ok(())
     })
 }

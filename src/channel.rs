@@ -1,7 +1,7 @@
 #[cfg(doc)]
 use crate::handshake;
+use crate::io::Connection;
 use crate::message::Message;
-use crate::socket::Socket;
 use crate::DistributionFlags;
 use futures::io::{AsyncRead, AsyncWrite};
 
@@ -27,31 +27,31 @@ const TYPE_TAG: u8 = 112;
 /// Sender of a message channel.
 #[derive(Debug)]
 pub struct Sender<T> {
-    socket: Socket<T>,
+    connection: Connection<T>,
 }
 
 impl<T> Sender<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    fn new(socket: T) -> Self {
+    fn new(connection: T) -> Self {
         Self {
-            socket: Socket::new(socket),
+            connection: Connection::new(connection),
         }
     }
 
     /// Sends a message.
     pub async fn send(&mut self, message: Message) -> Result<(), SendError> {
         if matches!(message, Message::Tick) {
-            self.socket.write_u32(0).await?;
+            self.connection.write_u32(0).await?;
         } else {
             let mut buf = Vec::new();
             message.write_into(&mut buf)?;
 
-            self.socket.write_u32(1 + buf.len() as u32).await?;
-            self.socket.write_u8(TYPE_TAG).await?;
-            self.socket.write_all(&buf).await?;
-            self.socket.flush().await?;
+            self.connection.write_u32(1 + buf.len() as u32).await?;
+            self.connection.write_u8(TYPE_TAG).await?;
+            self.connection.write_all(&buf).await?;
+            self.connection.flush().await?;
         }
         Ok(())
     }
@@ -60,22 +60,22 @@ where
 /// Receiver of a message channel.
 #[derive(Debug)]
 pub struct Receiver<T> {
-    socket: Socket<T>,
+    connection: Connection<T>,
 }
 
 impl<T> Receiver<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    fn new(socket: T) -> Self {
+    fn new(connection: T) -> Self {
         Self {
-            socket: Socket::new(socket),
+            connection: Connection::new(connection),
         }
     }
 
     /// Receives a message.
     pub async fn recv(&mut self) -> Result<Message, RecvError> {
-        let size = match self.socket.read_u32().await {
+        let size = match self.connection.read_u32().await {
             Ok(size) => size as usize,
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -89,13 +89,13 @@ where
             return Ok(Message::Tick);
         }
 
-        let tag = self.socket.read_u8().await?;
+        let tag = self.connection.read_u8().await?;
         if tag != TYPE_TAG {
             return Err(RecvError::UnexpectedTypeTag { tag });
         }
 
         let mut buf = vec![0; size - 1];
-        self.socket.read_exact(&mut buf).await?;
+        self.connection.read_exact(&mut buf).await?;
         Message::read_from(&mut buf.as_slice())
     }
 

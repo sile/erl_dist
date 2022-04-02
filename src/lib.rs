@@ -18,7 +18,7 @@ pub mod node;
 
 mod channel;
 mod flags;
-mod socket;
+mod io;
 
 pub use self::flags::DistributionFlags;
 
