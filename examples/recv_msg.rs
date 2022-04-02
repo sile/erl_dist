@@ -83,13 +83,16 @@ async fn handle_client(
 ) -> anyhow::Result<()> {
     let mut handshake =
         erl_dist::handshake::ServerSideHandshake::new(stream, local_node.clone(), &cookie);
-    let (_peer_name, is_dynamic) = handshake.execute_recv_name().await?;
-    if is_dynamic {
-        todo!();
-    }
-    let (stream, peer_node) = handshake
-        .execute_rest(erl_dist::handshake::HandshakeStatus::Ok)
-        .await?;
+    let status = if handshake.execute_recv_name().await?.is_some() {
+        erl_dist::handshake::HandshakeStatus::Ok
+    } else {
+        // Dynamic name.
+        erl_dist::handshake::HandshakeStatus::Named {
+            name: "generated_name".to_owned(),
+            creation: erl_dist::node::Creation::random(),
+        }
+    };
+    let (stream, peer_node) = handshake.execute_rest(status).await?;
     println!("Connected: {:?}", peer_node);
 
     let (mut tx, rx) = erl_dist::message::channel(stream, local_node.flags & peer_node.flags);
