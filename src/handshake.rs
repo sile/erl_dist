@@ -5,15 +5,17 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
+#![warn(missing_docs)]
 use crate::capability::DistributionFlags;
-use crate::node::{Creation, Node, NodeName};
+use crate::node::{Creation, LocalNode, NodeName, PeerNode};
 use crate::socket::Socket;
 use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
 
+/// Client-side handshake.
 #[derive(Debug)]
 pub struct ClientSideHandshake<T> {
-    local_node: Node,
+    local_node: LocalNode,
     local_challenge: Challenge,
     cookie: String,
     socket: Socket<T>,
@@ -24,13 +26,8 @@ impl<T> ClientSideHandshake<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(connection: T, mut local_node: Node, cookie: &str) -> Self {
-        if local_node.creation.is_none() {
-            local_node = Node {
-                creation: Some(Creation::random()),
-                ..local_node
-            };
-        }
+    /// Makes a new `ClientSideHandshake` instance.
+    pub fn new(connection: T, local_node: LocalNode, cookie: &str) -> Self {
         Self {
             local_node,
             local_challenge: Challenge::new(),
@@ -47,7 +44,10 @@ where
         Ok(status)
     }
 
-    pub async fn execute_rest(mut self, do_continue: bool) -> Result<(T, Node), HandshakeError> {
+    pub async fn execute_rest(
+        mut self,
+        do_continue: bool,
+    ) -> Result<(T, PeerNode), HandshakeError> {
         match self.send_name_status {
             None => {
                 return Err(HandshakeError::PhaseError {
@@ -130,7 +130,7 @@ where
         Ok(())
     }
 
-    async fn recv_challenge(&mut self) -> Result<(Node, Challenge), HandshakeError> {
+    async fn recv_challenge(&mut self) -> Result<(PeerNode, Challenge), HandshakeError> {
         let mut reader = self.socket.message_reader().await?;
         let (node, challenge) = match reader.read_u8().await? {
             b'n' => {
@@ -142,7 +142,7 @@ where
                     DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?));
                 let challenge = Challenge(reader.read_u32().await?);
                 let name = reader.read_string().await?.parse()?;
-                let node = Node {
+                let node = PeerNode {
                     name,
                     flags,
                     creation: None,
@@ -154,7 +154,7 @@ where
                 let challenge = Challenge(reader.read_u32().await?);
                 let creation = Creation::new(reader.read_u32().await?);
                 let name = reader.read_u16_string().await?.parse()?;
-                let node = Node {
+                let node = PeerNode {
                     name,
                     flags,
                     creation: Some(creation),
@@ -176,7 +176,7 @@ where
         let mut writer = self.socket.message_writer();
         writer.write_u8(b'c')?;
         writer.write_u32((self.local_node.flags.bits() >> 32) as u32)?;
-        writer.write_u32(self.local_node.creation.expect("unreachable").get())?;
+        writer.write_u32(self.local_node.creation.get())?;
         writer.finish().await?;
         Ok(())
     }
@@ -216,25 +216,18 @@ where
 
 #[derive(Debug)]
 pub struct ServerSideHandshake<T> {
-    local_node: Node,
+    local_node: LocalNode,
     local_challenge: Challenge,
     cookie: String,
     socket: Socket<T>,
-    peer_node: Option<Node>,
+    peer_node: Option<PeerNode>,
 }
 
 impl<T> ServerSideHandshake<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(connection: T, mut local_node: Node, cookie: &str) -> Self {
-        if local_node.creation.is_none() {
-            local_node = Node {
-                creation: Some(Creation::random()),
-                ..local_node
-            };
-        }
-
+    pub fn new(connection: T, local_node: LocalNode, cookie: &str) -> Self {
         Self {
             local_node,
             local_challenge: Challenge::new(),
@@ -256,7 +249,7 @@ where
                 let flags =
                     DistributionFlags::from_bits_truncate(u64::from(reader.read_u32().await?));
                 let name = reader.read_string().await?.parse()?;
-                Node {
+                PeerNode {
                     name,
                     flags,
                     creation: None,
@@ -266,7 +259,7 @@ where
                 let flags = DistributionFlags::from_bits_truncate(reader.read_u64().await?);
                 let creation = Creation::new(reader.read_u32().await?);
                 let name = reader.read_u16_string().await?.parse()?;
-                Node {
+                PeerNode {
                     name,
                     flags,
                     creation: Some(creation),
@@ -290,7 +283,7 @@ where
     pub async fn execute_rest(
         mut self,
         status: HandshakeStatus,
-    ) -> Result<(T, Node), HandshakeError> {
+    ) -> Result<(T, PeerNode), HandshakeError> {
         let (peer_flags, peer_creation) = if let Some(peer) = &self.peer_node {
             (peer.flags, peer.creation)
         } else {
@@ -349,7 +342,7 @@ where
             writer.write_u8(b'N')?;
             writer.write_u64(self.local_node.flags.bits())?;
             writer.write_u32(self.local_challenge.0)?;
-            writer.write_u32(self.local_node.creation.expect("unreachable").get())?;
+            writer.write_u32(self.local_node.creation.get())?;
             writer.write_u16(self.local_node.name.len() as u16)?;
             writer.write_all(self.local_node.name.to_string().as_bytes())?;
         } else {

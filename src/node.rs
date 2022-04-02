@@ -10,18 +10,25 @@ pub enum NodeNameError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Node {
+pub struct PeerNode {
     pub name: NodeName,
-    pub flags: DistributionFlags, // TODO: capabilities (?)
+    pub flags: DistributionFlags,
     pub creation: Option<Creation>,
 }
 
-impl Node {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LocalNode {
+    pub name: NodeName,
+    pub flags: DistributionFlags,
+    pub creation: Creation,
+}
+
+impl LocalNode {
     pub fn new(name: NodeName, creation: Creation) -> Self {
         Self {
             name,
             flags: Default::default(),
-            creation: Some(creation),
+            creation,
         }
     }
 }
