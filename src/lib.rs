@@ -54,7 +54,12 @@ mod tests {
                 .args(&["-sname", name, "-noshell", "-setcookie", COOKIE])
                 .spawn()?;
             let start = std::time::Instant::now();
-            while epmd_client().await.get_node(name).await?.is_none() {
+            loop {
+                if let Ok(client) = try_epmd_client().await {
+                    if client.get_node(name).await?.is_some() {
+                        break;
+                    }
+                }
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 if start.elapsed() > std::time::Duration::from_secs(10) {
                     break;
@@ -70,10 +75,15 @@ mod tests {
         }
     }
 
-    pub async fn epmd_client() -> crate::epmd::EpmdClient<smol::net::TcpStream> {
-        let stream = smol::net::TcpStream::connect(("127.0.0.1", crate::epmd::DEFAULT_EPMD_PORT))
+    pub async fn try_epmd_client() -> anyhow::Result<crate::epmd::EpmdClient<smol::net::TcpStream>>
+    {
+        let client = smol::net::TcpStream::connect(("127.0.0.1", crate::epmd::DEFAULT_EPMD_PORT))
             .await
-            .unwrap();
-        crate::epmd::EpmdClient::new(stream)
+            .map(crate::epmd::EpmdClient::new)?;
+        Ok(client)
+    }
+
+    pub async fn epmd_client() -> crate::epmd::EpmdClient<smol::net::TcpStream> {
+        try_epmd_client().await.unwrap()
     }
 }
