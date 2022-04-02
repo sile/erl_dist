@@ -52,6 +52,10 @@ impl NodeName {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn len(&self) -> usize {
         self.name.len() + 1 + self.host.len()
     }
