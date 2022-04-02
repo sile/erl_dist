@@ -148,6 +148,8 @@ where
                     let n = u64::from(bytes.read_u16::<BigEndian>()?);
                     let mut name = String::new();
                     bytes.take(n).read_to_string(&mut name)?;
+                    let node_name: NodeName = name.parse()?;
+                    let name = node_name.name().to_owned();
 
                     let creation = Creation::new(bytes.read_u32::<BigEndian>()?);
                     HandshakeStatus::Named { name, creation }
