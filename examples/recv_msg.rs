@@ -19,8 +19,8 @@ use futures::stream::StreamExt;
 #[derive(Debug, Parser)]
 #[clap(name = "recv_msg")]
 struct Args {
-    #[clap(long = "self", default_value = "bar@localhost")]
-    self_node: erl_dist::node::NodeName,
+    #[clap(long = "local", default_value = "bar@localhost")]
+    local_node: erl_dist::node::NodeName,
 
     #[clap(long, default_value = "WPKYDIOSJIMJUURLRUHV")]
     cookie: String,
@@ -30,7 +30,7 @@ impl Args {
     async fn local_epmd_client(
         &self,
     ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
-        let addr = (self.self_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
+        let addr = (self.local_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
         let stream = smol::net::TcpStream::connect(addr).await?;
         Ok(erl_dist::epmd::EpmdClient::new(stream))
     }
@@ -43,22 +43,20 @@ fn main() -> anyhow::Result<()> {
         let listening_port = listener.local_addr()?.port();
         println!("Listening port: {}", listening_port);
 
-        let self_node =
-            erl_dist::epmd::NodeEntry::new_hidden(&args.self_node.to_string(), listening_port);
+        let local_node_entry =
+            erl_dist::epmd::NodeEntry::new_hidden(args.local_node.name(), listening_port);
 
-        let mut self_node_for_epmd = self_node.clone(); // TODO
-        self_node_for_epmd.name = args.self_node.name().to_owned();
         let (keepalive_socket, creation) = args
             .local_epmd_client()
             .await?
-            .register(self_node_for_epmd)
+            .register(local_node_entry)
             .await?;
         println!("Registered self node: creation={:?}", creation);
 
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
             let stream = stream?;
-            let local_node = erl_dist::node::LocalNode::new(args.self_node.clone(), creation);
+            let local_node = erl_dist::node::LocalNode::new(args.local_node.clone(), creation);
             let cookie = args.cookie.clone();
             smol::spawn(async move {
                 match handle_client(local_node, cookie, stream).await {
