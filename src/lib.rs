@@ -8,14 +8,17 @@
 //!
 //! - Client Node Example: [send_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
 //! - Server Node Example: [recv_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
-pub mod capability;
+
 pub mod epmd;
 pub mod handshake;
 pub mod message;
 pub mod node;
 
 mod channel;
+mod flags;
 mod socket;
+
+pub use self::flags::DistributionFlags;
 
 /// The lowest distribution protocol version this crate can handle.
 pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;

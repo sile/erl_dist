@@ -5,9 +5,9 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
-use crate::capability::DistributionFlags;
 use crate::node::{Creation, LocalNode, NodeName, PeerNode};
 use crate::socket::Socket;
+use crate::DistributionFlags;
 use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
 

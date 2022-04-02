@@ -1,6 +1,6 @@
-use crate::capability::DistributionFlags;
 use crate::message::Message;
 use crate::socket::Socket;
+use crate::DistributionFlags;
 use futures::io::{AsyncRead, AsyncWrite};
 
 pub fn channel<T>(stream: T, _flags: DistributionFlags) -> (Sender<T>, Receiver<T>)
