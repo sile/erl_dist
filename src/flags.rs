@@ -126,41 +126,26 @@ bitflags::bitflags! {
 }
 
 impl Default for DistributionFlags {
-    // TODO: update
-    /// The default distribution flags.
-    ///
-    /// This is equivalent to the following code:
-    ///
-    /// ```no_run
-    /// # use erl_dist::DistributionFlags;
-    /// DistributionFlags::EXTENDED_REFERENCES | DistributionFlags::EXTENDED_PIDS_PORTS |
-    /// DistributionFlags::FUN_TAGS | DistributionFlags::NEW_FUN_TAGS |
-    /// DistributionFlags::EXPORT_PTR_TAG | DistributionFlags::BIT_BINARIES |
-    /// DistributionFlags::NEW_FLOATS | DistributionFlags::SMALL_ATOM_TAGS |
-    /// DistributionFlags::UTF8_ATOMS | DistributionFlags::MAP_TAGS
-    /// # ;
-    /// ```
     fn default() -> Self {
-        Self::EXTENDED_REFERENCES
-            | Self::EXTENDED_PIDS_PORTS
-            | Self::FUN_TAGS
-            | Self::NEW_FUN_TAGS
-            | Self::EXPORT_PTR_TAG
-            | Self::BIT_BINARIES
-            | Self::NEW_FLOATS
-            | Self::SMALL_ATOM_TAGS
-            | Self::UTF8_ATOMS
-            | Self::MAP_TAGS
-            | Self::HANDSHAKE_23
-            | Self::BIG_CREATION
+        Self::new()
     }
 }
 
 impl DistributionFlags {
-    /// Gets the flags the this crate supports.
+    /// Makes a new [`DistributionFlags`] with the default flags.
     ///
-    /// This is the same as [`DistributionFlags::default()`].
-    pub fn supported() -> Self {
+    /// This is equivalent to the following code:
+    ///
+    /// ```
+    /// # use erl_dist::DistributionFlags;
+    /// DistributionFlags::mandatory() | DistributionFlags::HANDSHAKE_23;
+    /// ```
+    pub fn new() -> Self {
+        Self::mandatory() | Self::HANDSHAKE_23
+    }
+
+    /// Gets the mandatory flags (in OTP 25).
+    pub fn mandatory() -> Self {
         Self::EXTENDED_REFERENCES
             | Self::FUN_TAGS
             | Self::NEW_FUN_TAGS
