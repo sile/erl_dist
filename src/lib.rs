@@ -17,25 +17,11 @@ pub mod node;
 mod channel;
 mod socket;
 
-// TODO
-/// Protocol for communicating with a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum TransportProtocol {
-    /// TCP/IPv4.
-    TcpIpV4 = 0,
-}
+/// The lowest distribution protocol version this crate can handle.
+pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
 
-impl TryFrom<u8> for TransportProtocol {
-    type Error = crate::epmd::EpmdError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::TcpIpV4),
-            _ => Err(crate::epmd::EpmdError::UnknownTransportProtocol { value }),
-        }
-    }
-}
+/// The highest distribution protocol version this crate can handle.
+pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
 
 #[cfg(test)]
 mod tests {

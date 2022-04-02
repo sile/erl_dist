@@ -1,8 +1,4 @@
-pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
-pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
-
 bitflags::bitflags! {
-    // capability flags
     /// Distribution flags.
     pub struct DistributionFlags: u64 {
         /// The node is to be published and part of the global namespace.

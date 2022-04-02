@@ -88,29 +88,6 @@ impl std::fmt::Display for NodeName {
     }
 }
 
-/// Type of a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum NodeType {
-    /// Hidden node (C-node).
-    Hidden = 72,
-
-    /// Normal Erlang node.
-    Normal = 77,
-}
-
-impl TryFrom<u8> for NodeType {
-    type Error = crate::epmd::EpmdError; // TODO
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            72 => Ok(Self::Hidden),
-            77 => Ok(Self::Normal),
-            _ => Err(crate::epmd::EpmdError::UnknownNodeType { value }),
-        }
-    }
-}
-
 /// Incarnation identifier of a node.
 ///
 /// [`Creation`] is used by the node to create its pids, ports and references.

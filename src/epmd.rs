@@ -5,14 +5,11 @@
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details.
-use crate::capability::{
-    HIGHEST_DISTRIBUTION_PROTOCOL_VERSION, LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
-};
+use crate::node::Creation;
 #[cfg(doc)]
 use crate::node::NodeName;
-use crate::node::{Creation, NodeType};
 use crate::socket::Socket;
-use crate::TransportProtocol;
+use crate::{HIGHEST_DISTRIBUTION_PROTOCOL_VERSION, LOWEST_DISTRIBUTION_PROTOCOL_VERSION};
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
@@ -102,14 +99,6 @@ pub enum EpmdError {
     #[error("received an unknown tag {tag} as the response of {request}")]
     UnknownResponseTag { request: &'static str, tag: u8 },
 
-    /// Unknown node type.
-    #[error("unknown node type {value}")]
-    UnknownNodeType { value: u8 },
-
-    /// Unknown transport protocol.
-    #[error("unknown transport protocol {value}")]
-    UnknownTransportProtocol { value: u8 },
-
     /// Too long request.
     #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
     TooLongRequest { size: usize },
@@ -161,8 +150,8 @@ where
         self.socket.write_u16(size).await?;
         self.socket.write_u8(TAG_ALIVE2_REQ).await?;
         self.socket.write_u16(node.port).await?;
-        self.socket.write_u8(node.node_type as u8).await?;
-        self.socket.write_u8(node.protocol as u8).await?;
+        self.socket.write_u8(node.node_type.into()).await?;
+        self.socket.write_u8(node.protocol.into()).await?;
         self.socket.write_u16(node.highest_version as u16).await?;
         self.socket.write_u16(node.lowest_version as u16).await?;
         self.socket.write_u16(node.name.len() as u16).await?;
@@ -249,8 +238,8 @@ where
 
         Ok(Some(NodeEntry {
             port: self.socket.read_u16().await?,
-            node_type: NodeType::try_from(self.socket.read_u8().await?)?,
-            protocol: TransportProtocol::try_from(self.socket.read_u8().await?)?,
+            node_type: self.socket.read_u8().await?.into(),
+            protocol: self.socket.read_u8().await?.into(),
             highest_version: self.socket.read_u16().await?,
             lowest_version: self.socket.read_u16().await?,
             name: self.socket.read_u16_string().await?,
@@ -326,6 +315,69 @@ impl FromStr for NodeNameAndPort {
         let name = s[..pos].to_string();
         let port = s[pos + " at port ".len()..].parse().map_err(|_| error())?;
         Ok(Self { name, port })
+    }
+}
+
+/// Protocol for communicating with a distributed node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum TransportProtocol {
+    /// TCP/IPv4.
+    TcpIpV4,
+
+    /// Other protocol.
+    Other(u8),
+}
+
+impl From<u8> for TransportProtocol {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::TcpIpV4,
+            _ => Self::Other(v),
+        }
+    }
+}
+
+impl From<TransportProtocol> for u8 {
+    fn from(v: TransportProtocol) -> Self {
+        match v {
+            TransportProtocol::TcpIpV4 => 0,
+            TransportProtocol::Other(v) => v,
+        }
+    }
+}
+
+/// Type of a distributed node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum NodeType {
+    /// Hidden node (C-node).
+    Hidden,
+
+    /// Normal Erlang node.
+    Normal,
+
+    /// Other node.
+    Other(u8),
+}
+
+impl From<u8> for NodeType {
+    fn from(v: u8) -> Self {
+        match v {
+            72 => Self::Hidden,
+            77 => Self::Normal,
+            _ => Self::Other(v),
+        }
+    }
+}
+
+impl From<NodeType> for u8 {
+    fn from(v: NodeType) -> Self {
+        match v {
+            NodeType::Hidden => 72,
+            NodeType::Normal => 77,
+            NodeType::Other(v) => v,
+        }
     }
 }
 
