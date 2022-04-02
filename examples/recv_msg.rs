@@ -83,7 +83,8 @@ async fn handle_client(
     cookie: String,
     stream: smol::net::TcpStream,
 ) -> anyhow::Result<()> {
-    let mut handshake = erl_dist::handshake::ServerSideHandshake::new(stream, local_node, &cookie);
+    let mut handshake =
+        erl_dist::handshake::ServerSideHandshake::new(stream, local_node.clone(), &cookie);
     let (_peer_name, is_dynamic) = handshake.execute_recv_name().await?;
     if is_dynamic {
         todo!();
@@ -93,9 +94,9 @@ async fn handle_client(
         .await?;
     println!("Connected: {:?}", peer_node);
 
-    let (mut tx, rx) = erl_dist::message::channel(stream, peer_node.flags);
-    let mut timer = smol::Timer::after(std::time::Duration::from_secs(30)); // interval?
-    let mut msg_future = Box::pin(rx.recv2());
+    let (mut tx, rx) = erl_dist::message::channel(stream, local_node.flags & peer_node.flags);
+    let mut timer = smol::Timer::after(std::time::Duration::from_secs(30));
+    let mut msg_future = Box::pin(rx.recv_owned());
     loop {
         let result = futures::future::select(
             msg_future,
@@ -106,7 +107,7 @@ async fn handle_client(
             futures::future::Either::Left((result, _)) => {
                 let (msg, rx) = result?;
                 println!("Recv: {:?}", msg);
-                msg_future = Box::pin(rx.recv2());
+                msg_future = Box::pin(rx.recv_owned());
             }
             futures::future::Either::Right((_, f)) => {
                 msg_future = f;
@@ -114,7 +115,7 @@ async fn handle_client(
         }
 
         if smol::future::poll_once(&mut timer).await.is_some() {
-            tx.tick().await?;
+            tx.send(erl_dist::message::Message::Tick).await?;
             timer.set_after(std::time::Duration::from_secs(30));
         }
     }

@@ -7,7 +7,7 @@
 use eetf::{Atom, DecodeError, EncodeError, FixInteger, Pid, Reference, Term, Tuple};
 use std::io::{Read, Write};
 
-pub use crate::channel::{channel, Receiver, Sender};
+pub use crate::channel::{channel, Receiver, RecvError, SendError, Sender};
 
 trait ReadTermExt: Read {
     fn read_tuple(&mut self) -> Result<Tuple, DecodeError> {
@@ -1178,6 +1178,7 @@ pub enum Message {
     UnlinkIdAck(UnlinkIdAck),
     AliasSend(AliasSend),
     AliasSendTt(AliasSendTt),
+    Tick,
 }
 
 impl Message {
@@ -1195,7 +1196,10 @@ impl Message {
         })
     }
 
-    pub fn write_into<W: Write>(self, writer: &mut W) -> Result<(), crate::channel::SendError> {
+    pub(crate) fn write_into<W: Write>(
+        self,
+        writer: &mut W,
+    ) -> Result<(), crate::channel::SendError> {
         match self {
             Self::Link(x) => x.write_into(writer)?,
             Self::Send(x) => x.write_into(writer)?,
@@ -1227,6 +1231,7 @@ impl Message {
             Self::UnlinkIdAck(x) => x.write_into(writer)?,
             Self::AliasSend(x) => x.write_into(writer)?,
             Self::AliasSendTt(x) => x.write_into(writer)?,
+            Self::Tick => unreachable!(),
         }
         Ok(())
     }

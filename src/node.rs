@@ -42,6 +42,7 @@ pub struct PeerNode {
 
 /// Errors that can occur while parsing node names.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 #[allow(missing_docs)]
 pub enum NodeNameError {
     #[error("node name length must be less than 256, but got {size} characters")]

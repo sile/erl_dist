@@ -512,6 +512,7 @@ struct Digest([u8; 16]);
 
 /// Possible errors during handshake.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 #[allow(missing_docs)]
 pub enum HandshakeError {
     #[error("peer already has an ongoing handshake with this node")]
