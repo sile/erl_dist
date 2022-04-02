@@ -108,8 +108,13 @@ where
                 writer.write_u8(b'N')?;
                 writer.write_u64(self.local_node.flags.bits())?;
                 writer.write_u32(self.local_node.creation.get())?;
-                writer.write_u16(self.local_node.name.len() as u16)?;
-                writer.write_all(self.local_node.name.to_string().as_bytes())?;
+                if self.local_node.flags.contains(DistributionFlags::NAME_ME) {
+                    writer.write_u16(self.local_node.name.host().len() as u16)?;
+                    writer.write_all(self.local_node.name.host().as_bytes())?;
+                } else {
+                    writer.write_u16(self.local_node.name.len() as u16)?;
+                    writer.write_all(self.local_node.name.to_string().as_bytes())?;
+                }
             }
             value => {
                 return Err(HandshakeError::UnknownProtocolVersion { value });
@@ -143,7 +148,9 @@ where
                     let n = u64::from(bytes.read_u16::<BigEndian>()?);
                     let mut name = String::new();
                     bytes.take(n).read_to_string(&mut name)?;
-                    HandshakeStatus::Named { name }
+
+                    let creation = Creation::new(bytes.read_u32::<BigEndian>()?);
+                    HandshakeStatus::Named { name, creation }
                 } else {
                     let status = String::from_utf8_lossy(&status).to_string();
                     return Err(HandshakeError::UnknownStatus { status });
@@ -275,10 +282,9 @@ where
     /// To complete the handshake, you then need to call [`ServerSideHandshake::execute_rest()`] method
     /// taking into account the [`NodeName`] sent from the peer node.
     ///
-    /// Note that the second value of the result tuple indicates whether
-    /// the peer requested a dynamic node name. If the value is `true` and
-    /// you want to continue the handshake, you need to use [`HandshakeStatus::Named`] for the reply.
-    pub async fn execute_recv_name(&mut self) -> Result<(NodeName, bool), HandshakeError> {
+    /// Note that the return value becomes `None` if the peer requested a dynamic node name.
+    /// In the case, if you want to continue the handshake, you need to use [`HandshakeStatus::Named`] for the reply.
+    pub async fn execute_recv_name(&mut self) -> Result<Option<NodeName>, HandshakeError> {
         let mut reader = self.connection.handshake_message_reader().await?;
         let tag = reader.read_u8().await?;
         let node = match tag {
@@ -299,7 +305,12 @@ where
             b'N' => {
                 let flags = DistributionFlags::from_bits_truncate(reader.read_u64().await?);
                 let creation = Creation::new(reader.read_u32().await?);
-                let name = reader.read_u16_string().await?.parse()?;
+                let name = if flags.contains(DistributionFlags::NAME_ME) {
+                    let host = reader.read_u16_string().await?;
+                    NodeName::new("nonode", &host)?
+                } else {
+                    reader.read_u16_string().await?.parse()?
+                };
                 PeerNode {
                     name,
                     flags,
@@ -318,7 +329,11 @@ where
         let name = node.name.clone();
         let is_dynamic = node.flags.contains(DistributionFlags::NAME_ME);
         self.peer_node = Some(node);
-        Ok((name, is_dynamic))
+        if is_dynamic {
+            Ok(None)
+        } else {
+            Ok(Some(name))
+        }
     }
 
     /// Executes the rest part of the handshake protocol.
@@ -365,10 +380,17 @@ where
             HandshakeStatus::Nok => writer.write_all(b"nok")?,
             HandshakeStatus::NotAllowed => writer.write_all(b"not_allowed")?,
             HandshakeStatus::Alive => writer.write_all(b"alive")?,
-            HandshakeStatus::Named { name } => {
+            HandshakeStatus::Named { name, creation } => {
+                let peer_node = self.peer_node.as_mut().expect("unreachable");
+                let node_name = NodeName::new(name, peer_node.name.host())?;
                 writer.write_all(b"named:")?;
-                writer.write_u16(name.len() as u16)?;
-                writer.write_all(name.as_bytes())?;
+                writer.write_u16(node_name.len() as u16)?;
+                writer.write_all(node_name.to_string().as_bytes())?;
+                writer.write_u32(creation.get())?;
+
+                peer_node.name = node_name;
+                peer_node.creation = Some(*creation);
+                self.local_node.flags |= DistributionFlags::NAME_ME;
             }
         }
         writer.finish().await?;
@@ -490,7 +512,12 @@ pub enum HandshakeStatus {
     /// The handshake willl continue, but the client-side node requested a dynamic node name.
     Named {
         /// Dynamic node name that the server-side node generated.
+        ///
+        /// Note that this name doesn't contain the host part.
         name: String,
+
+        /// Node creation that the server-side node generated for the client node.
+        creation: Creation,
     },
 }
 
@@ -623,9 +650,8 @@ mod tests {
                     LocalNode::new("bar@localhost".parse().unwrap(), Creation::random());
                 let mut handshake =
                     ServerSideHandshake::new(connection.unwrap(), local_node, crate::tests::COOKIE);
-                let (peer_name, is_dynamic) = handshake.execute_recv_name().await.unwrap();
-                assert_eq!(peer_name.name(), "foo");
-                assert!(!is_dynamic);
+                let peer_name = handshake.execute_recv_name().await.unwrap();
+                assert!(peer_name.is_some());
 
                 handshake.execute_rest(HandshakeStatus::Ok).await.unwrap();
             }
