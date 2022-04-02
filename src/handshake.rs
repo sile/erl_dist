@@ -7,6 +7,7 @@
 //! for more details.
 use crate::node::{Creation, Node, NodeName};
 use crate::socket::Socket;
+use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
 
 pub use self::flags::DistributionFlags;
@@ -18,22 +19,15 @@ pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
 mod flags;
 
 #[derive(Debug)]
-pub struct Handshaked<T> {
-    pub connection: T,
-    pub local_node: Node,
-    pub peer_node: Node,
-}
-
-// TODO: ClientSideHandshake
-#[derive(Debug)]
-pub struct HandshakeClient<T> {
+pub struct ClientSideHandshake<T> {
     local_node: Node,
     local_challenge: Challenge,
     cookie: String,
     socket: Socket<T>,
+    send_name_status: Option<HandshakeStatus>,
 }
 
-impl<T> HandshakeClient<T>
+impl<T> ClientSideHandshake<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
@@ -49,45 +43,46 @@ where
             local_challenge: Challenge::new(),
             cookie: cookie.to_owned(),
             socket: Socket::new(connection),
+            send_name_status: None,
         }
     }
 
-    pub async fn execute(mut self) -> Result<Handshaked<T>, HandshakeError> {
-        log::debug!(
-            "[client] handshake started: local_node={:?}, local_challenge={:?}",
-            self.local_node,
-            self.local_challenge
-        );
-
+    pub async fn execute_send_name(&mut self) -> Result<HandshakeStatus, HandshakeError> {
         self.send_name().await?;
-        log::debug!("[client] send_name");
+        let status = self.recv_status().await?;
+        self.send_name_status = Some(status.clone());
+        Ok(status)
+    }
 
-        self.recv_status().await?;
-        log::debug!("[client] recv_status");
-
-        let (peer_node, peer_challenge) = self.recv_challenge().await?;
-        log::debug!(
-            "[client] recv_challenge: peer_node={:?}, peer_challenge={:?}",
-            peer_node,
-            peer_node
-        );
-
-        if peer_node.creation.is_some() {
-            self.send_complement().await?;
-            log::debug!("[client] send_complement");
+    pub async fn execute_rest(mut self, do_continue: bool) -> Result<(T, Node), HandshakeError> {
+        match self.send_name_status {
+            None => {
+                return Err(HandshakeError::PhaseError {
+                    current: "ClientSideHandshake::execute_rest()",
+                    depends_on: "ClientSideHandshake::execute_send_name()",
+                })
+            }
+            Some(HandshakeStatus::Nok) => return Err(HandshakeError::OngoingHandshake),
+            Some(HandshakeStatus::NotAllowed) => return Err(HandshakeError::NotAllowed),
+            Some(HandshakeStatus::Alive) => {
+                self.send_status(if do_continue { "true" } else { "false" })
+                    .await?;
+                if !do_continue {
+                    return Err(HandshakeError::AlreadyActive);
+                }
+            }
+            _ => {}
         }
 
+        let (peer_node, peer_challenge) = self.recv_challenge().await?;
+        if peer_node.creation.is_some() {
+            self.send_complement().await?;
+        }
         self.send_challenge_reply(peer_challenge).await?;
-        log::debug!("[client] send_challenge_reply");
-
         self.recv_challenge_ack().await?;
-        log::debug!("[client] recv_challenge_ack");
 
-        Ok(Handshaked {
-            connection: self.socket.into_inner(),
-            local_node: self.local_node,
-            peer_node,
-        })
+        let connection = self.socket.into_inner();
+        Ok((connection, peer_node))
     }
 
     async fn send_name(&mut self) -> Result<(), HandshakeError> {
@@ -100,7 +95,7 @@ where
         Ok(())
     }
 
-    async fn recv_status(&mut self) -> Result<(), HandshakeError> {
+    async fn recv_status(&mut self) -> Result<HandshakeStatus, HandshakeError> {
         let mut reader = self.socket.message_reader().await?;
         let tag = reader.read_u8().await?;
         if tag != b's' {
@@ -109,30 +104,30 @@ where
                 tag,
             });
         }
-        let status = reader.read_string().await?;
-        match status.as_str() {
-            "ok" | "ok_simultaneous" => {}
-            "nok" => {
-                return Err(HandshakeError::OngoingHandshake);
-            }
-            "not_allowed" => {
-                return Err(HandshakeError::NotAllowed);
-            }
-            "alive" => {
-                // TODO: Add an option to send "true" instead.
-                self.send_status("false").await?;
-                return Err(HandshakeError::AlreadyActive);
-            }
-            "named:" => {
-                // TODO:
-                todo!();
-            }
+        let status = reader.read_bytes().await?;
+        let status = match status.as_slice() {
+            b"ok" => HandshakeStatus::Ok,
+            b"ok_simultaneous" => HandshakeStatus::OkSimultaneous,
+            b"nok" => HandshakeStatus::Nok,
+            b"not_allowed" => HandshakeStatus::NotAllowed,
+            b"alive" => HandshakeStatus::Alive,
             _ => {
-                return Err(HandshakeError::UnknownStatus { status });
+                if status.starts_with(b"named:") {
+                    use std::io::Read as _;
+
+                    let mut bytes = &status["named:".len()..];
+                    let n = u64::from(bytes.read_u16::<BigEndian>()?);
+                    let mut name = String::new();
+                    bytes.take(n).read_to_string(&mut name)?;
+                    HandshakeStatus::Named(name)
+                } else {
+                    let status = String::from_utf8_lossy(&status).to_string();
+                    return Err(HandshakeError::UnknownStatus { status });
+                }
             }
-        }
+        };
         reader.finish().await?;
-        Ok(())
+        Ok(status)
     }
 
     async fn send_status(&mut self, status: &str) -> Result<(), HandshakeError> {

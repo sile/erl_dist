@@ -76,16 +76,16 @@ fn main() -> anyhow::Result<()> {
         println!("Registered self node: creation={:?}", creation);
 
         let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
-        let handshake = erl_dist::handshake::HandshakeClient::new(
+        let mut handshake = erl_dist::handshake::ClientSideHandshake::new(
             stream,
             erl_dist::node::Node::new(args.self_node.clone(), creation),
             &args.cookie,
         );
-        let handshaked = handshake.execute().await?;
-        println!("Handshake finished: peer={:?}", handshaked.peer_node);
+        let _status = handshake.execute_send_name().await?; // TODO:
+        let (connection, peer_node) = handshake.execute_rest(true).await?;
+        println!("Handshake finished: peer={:?}", peer_node);
 
-        let (mut tx, _) =
-            erl_dist::message::channel(handshaked.connection, handshaked.peer_node.flags);
+        let (mut tx, _) = erl_dist::message::channel(connection, peer_node.flags);
         let pid = eetf::Pid::new(args.self_node.to_string(), 0, 0, creation.get());
         let msg = erl_dist::message::Message::reg_send(
             pid,

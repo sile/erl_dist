@@ -66,13 +66,14 @@ fn main() -> anyhow::Result<()> {
         println!("Registered self node: creation={:?}", creation);
 
         let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
-        let handshake = erl_dist::handshake::HandshakeClient::new(
+        let mut handshake = erl_dist::handshake::ClientSideHandshake::new(
             stream,
             erl_dist::node::Node::new(args.self_node.clone(), creation),
             &args.cookie,
         );
-        let handshaked = handshake.execute().await?;
-        println!("Handshake finished: peer={:?}", handshaked.peer_node);
+        let _status = handshake.execute_send_name().await?; // TODO:
+        let (_, peer_node) = handshake.execute_rest(true).await?;
+        println!("Handshake finished: peer={:?}", peer_node);
 
         std::mem::drop(keepalive_socket);
         Ok(())
