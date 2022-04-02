@@ -84,6 +84,13 @@ where
         self.socket.read_stringn(n).await
     }
 
+    pub async fn read_bytes(&mut self) -> std::io::Result<Vec<u8>> {
+        let n = self.size;
+        let mut buf = vec![0; n];
+        self.read_exact(&mut buf).await?;
+        Ok(buf)
+    }
+
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
         let n = buf.len();
         self.size = self.size.checked_sub(n).ok_or_else(|| {
@@ -105,6 +112,10 @@ where
         self.size = 0;
         self.socket.read_exact(&mut buf).await?;
         Ok(())
+    }
+
+    pub async fn finish(mut self) -> std::io::Result<()> {
+        self.consume_remaining_bytes().await
     }
 }
 

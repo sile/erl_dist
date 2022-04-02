@@ -4,6 +4,7 @@ erl_dist
 [![erl_dist](https://img.shields.io/crates/v/erl_dist.svg)](https://crates.io/crates/erl_dist)
 [![Documentation](https://docs.rs/erl_dist/badge.svg)](https://docs.rs/erl_dist)
 [![Actions Status](https://github.com/sile/erl_dist/workflows/CI/badge.svg)](https://github.com/sile/erl_dist/actions)
+[![Coverage Status](https://coveralls.io/repos/github/sile/erl_dist/badge.svg?branch=master)](https://coveralls.io/github/sile/erl_dist?branch=master)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Rust Implementation of [Erlang Distribution Protocol](http://erlang.org/doc/apps/erts/erl_dist_protocol.html).

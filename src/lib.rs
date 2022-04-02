@@ -8,6 +8,7 @@
 //!
 //! - Client Node Example: [send_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
 //! - Server Node Example: [recv_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
+pub mod capability;
 pub mod epmd;
 pub mod handshake;
 pub mod message;
@@ -16,53 +17,7 @@ pub mod node;
 mod channel;
 mod socket;
 
-/// Incarnation identifier of a node.
-///
-/// [`Creation`] is used by the node to create its pids, ports and references.
-/// If the node restarts, the value of [`Creation`] will be changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Creation(u32);
-
-impl Creation {
-    /// Makes a new [`Creation`] instance.
-    pub const fn new(n: u32) -> Self {
-        Self(n)
-    }
-
-    /// Gets the value.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Distribution protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum DistributionProtocolVersion {
-    /// Version 5.
-    V5 = 5,
-
-    /// Version 6 (introduced in OTP 23).
-    V6 = 6,
-}
-
-impl std::fmt::Display for DistributionProtocolVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", *self as u16)
-    }
-}
-
-impl TryFrom<u16> for DistributionProtocolVersion {
-    type Error = crate::epmd::EpmdError; // TODO
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            5 => Ok(Self::V5),
-            6 => Ok(Self::V6),
-            _ => Err(crate::epmd::EpmdError::UnknownDistributionProtocolVersion { value }),
-        }
-    }
-}
-
+// TODO
 /// Protocol for communicating with a distributed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -79,5 +34,56 @@ impl TryFrom<u8> for TransportProtocol {
             0 => Ok(Self::TcpIpV4),
             _ => Err(crate::epmd::EpmdError::UnknownTransportProtocol { value }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::{Child, Command};
+
+    pub const COOKIE: &str = "test-cookie";
+
+    #[derive(Debug)]
+    pub struct TestErlangNode {
+        child: Child,
+    }
+
+    impl TestErlangNode {
+        pub async fn new(name: &str) -> anyhow::Result<Self> {
+            let child = Command::new("erl")
+                .args(&["-sname", name, "-noshell", "-setcookie", COOKIE])
+                .spawn()?;
+            let start = std::time::Instant::now();
+            loop {
+                if let Ok(client) = try_epmd_client().await {
+                    if client.get_node(name).await?.is_some() {
+                        break;
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if start.elapsed() > std::time::Duration::from_secs(10) {
+                    break;
+                }
+            }
+            Ok(Self { child })
+        }
+    }
+
+    impl Drop for TestErlangNode {
+        fn drop(&mut self) {
+            let _ = self.child.kill();
+        }
+    }
+
+    pub async fn try_epmd_client() -> anyhow::Result<crate::epmd::EpmdClient<smol::net::TcpStream>>
+    {
+        let client = smol::net::TcpStream::connect(("127.0.0.1", crate::epmd::DEFAULT_EPMD_PORT))
+            .await
+            .map(crate::epmd::EpmdClient::new)?;
+        Ok(client)
+    }
+
+    pub async fn epmd_client() -> crate::epmd::EpmdClient<smol::net::TcpStream> {
+        try_epmd_client().await.unwrap()
     }
 }

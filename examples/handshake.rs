@@ -40,6 +40,8 @@ impl Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     let args = Args::parse();
     smol::block_on(async {
         let peer_node = args
@@ -64,14 +66,14 @@ fn main() -> anyhow::Result<()> {
         println!("Registered self node: creation={:?}", creation);
 
         let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
-        let handshake = erl_dist::handshake::Handshake::new(
-            self_node,
-            creation,
-            erl_dist::handshake::DistributionFlags::default(),
+        let mut handshake = erl_dist::handshake::ClientSideHandshake::new(
+            stream,
+            erl_dist::node::LocalNode::new(args.self_node.clone(), creation),
             &args.cookie,
         );
-        let (_, peer_info) = handshake.connect(peer_node, stream).await?;
-        println!("Handshake finished: peer={:?}", peer_info);
+        let _status = handshake.execute_send_name().await?; // TODO:
+        let (_, peer_node) = handshake.execute_rest(true).await?;
+        println!("Handshake finished: peer={:?}", peer_node);
 
         std::mem::drop(keepalive_socket);
         Ok(())

@@ -58,10 +58,10 @@ fn main() -> anyhow::Result<()> {
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
             let stream = stream?;
-            let self_node = self_node.clone();
+            let local_node = erl_dist::node::LocalNode::new(args.self_node.clone(), creation);
             let cookie = args.cookie.clone();
             smol::spawn(async move {
-                match handle_client(self_node, creation, cookie, stream).await {
+                match handle_client(local_node, cookie, stream).await {
                     Ok(()) => {
                         println!("Client disconnected");
                     }
@@ -79,21 +79,21 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn handle_client(
-    node: erl_dist::epmd::NodeEntry,
-    creation: erl_dist::Creation,
+    local_node: erl_dist::node::LocalNode,
     cookie: String,
     stream: smol::net::TcpStream,
 ) -> anyhow::Result<()> {
-    let handshake = erl_dist::handshake::Handshake::new(
-        node,
-        creation,
-        erl_dist::handshake::DistributionFlags::default(),
-        &cookie,
-    );
-    let (stream, peer_info) = handshake.accept(stream).await?;
-    println!("Connected: {:?}", peer_info);
+    let mut handshake = erl_dist::handshake::ServerSideHandshake::new(stream, local_node, &cookie);
+    let (_peer_name, is_dynamic) = handshake.execute_recv_name().await?;
+    if is_dynamic {
+        todo!();
+    }
+    let (stream, peer_node) = handshake
+        .execute_rest(erl_dist::handshake::HandshakeStatus::Ok)
+        .await?;
+    println!("Connected: {:?}", peer_node);
 
-    let (mut tx, rx) = erl_dist::message::channel(stream, peer_info.flags);
+    let (mut tx, rx) = erl_dist::message::channel(stream, peer_node.flags);
     let mut timer = smol::Timer::after(std::time::Duration::from_secs(30)); // interval?
     let mut msg_future = Box::pin(rx.recv2());
     loop {

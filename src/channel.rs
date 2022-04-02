@@ -1,4 +1,4 @@
-use crate::handshake::DistributionFlags;
+use crate::capability::DistributionFlags;
 use crate::message::Message;
 use crate::socket::Socket;
 use futures::io::{AsyncRead, AsyncWrite};

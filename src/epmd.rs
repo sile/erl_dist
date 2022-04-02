@@ -5,11 +5,14 @@
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details.
+use crate::capability::{
+    HIGHEST_DISTRIBUTION_PROTOCOL_VERSION, LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
+};
 #[cfg(doc)]
 use crate::node::NodeName;
-use crate::node::NodeType;
+use crate::node::{Creation, NodeType};
 use crate::socket::Socket;
-use crate::{Creation, DistributionProtocolVersion, TransportProtocol};
+use crate::TransportProtocol;
 use futures::io::{AsyncRead, AsyncWrite};
 use std::str::FromStr;
 
@@ -43,10 +46,10 @@ pub struct NodeEntry {
     pub protocol: TransportProtocol,
 
     /// Highest distribution protocol version that this node can handle.
-    pub highest_version: DistributionProtocolVersion,
+    pub highest_version: u16,
 
     /// Lowest distribution protocol version that this node can handle.
-    pub lowest_version: DistributionProtocolVersion,
+    pub lowest_version: u16,
 
     /// Extra field.
     pub extra: Vec<u8>,
@@ -60,8 +63,8 @@ impl NodeEntry {
             port,
             node_type: NodeType::Normal,
             protocol: TransportProtocol::TcpIpV4,
-            highest_version: DistributionProtocolVersion::V6,
-            lowest_version: DistributionProtocolVersion::V5,
+            highest_version: HIGHEST_DISTRIBUTION_PROTOCOL_VERSION,
+            lowest_version: LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
             extra: Vec::new(),
         }
     }
@@ -73,8 +76,8 @@ impl NodeEntry {
             port,
             node_type: NodeType::Hidden,
             protocol: TransportProtocol::TcpIpV4,
-            highest_version: DistributionProtocolVersion::V6,
-            lowest_version: DistributionProtocolVersion::V5,
+            highest_version: HIGHEST_DISTRIBUTION_PROTOCOL_VERSION,
+            lowest_version: LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
             extra: Vec::new(),
         }
     }
@@ -106,10 +109,6 @@ pub enum EpmdError {
     /// Unknown transport protocol.
     #[error("unknown transport protocol {value}")]
     UnknownTransportProtocol { value: u8 },
-
-    /// Unknown distribution protocol version.
-    #[error("unknown distribution protocol version {value}")]
-    UnknownDistributionProtocolVersion { value: u16 },
 
     /// Too long request.
     #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
@@ -252,8 +251,8 @@ where
             port: self.socket.read_u16().await?,
             node_type: NodeType::try_from(self.socket.read_u8().await?)?,
             protocol: TransportProtocol::try_from(self.socket.read_u8().await?)?,
-            highest_version: self.socket.read_u16().await?.try_into()?,
-            lowest_version: self.socket.read_u16().await?.try_into()?,
+            highest_version: self.socket.read_u16().await?,
+            lowest_version: self.socket.read_u16().await?,
             name: self.socket.read_u16_string().await?,
             extra: self.socket.read_u16_bytes().await?,
         }))
@@ -333,43 +332,17 @@ impl FromStr for NodeNameAndPort {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::{Child, Command};
-
-    #[derive(Debug)]
-    struct TestErlangNode {
-        child: Child,
-    }
-
-    impl TestErlangNode {
-        fn new(name: &str) -> std::io::Result<Self> {
-            let child = Command::new("erl")
-                .args(&["-sname", name, "-noshell"])
-                .spawn()?;
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            Ok(Self { child })
-        }
-    }
-
-    impl Drop for TestErlangNode {
-        fn drop(&mut self) {
-            let _ = self.child.kill();
-        }
-    }
-
-    async fn epmd_client() -> EpmdClient<smol::net::TcpStream> {
-        let stream = smol::net::TcpStream::connect(("127.0.0.1", DEFAULT_EPMD_PORT))
-            .await
-            .unwrap();
-        EpmdClient::new(stream)
-    }
 
     #[test]
     fn epmd_client_works() {
-        let node_name = "erl_dist_test";
-        let erl_node = TestErlangNode::new(node_name).expect("failed to run a test erlang node");
+        let node_name = "epmd_client_works";
         smol::block_on(async {
+            let erl_node = crate::tests::TestErlangNode::new(node_name)
+                .await
+                .expect("failed to run a test erlang node");
+
             // Get the information of an existing Erlang node.
-            let node = epmd_client()
+            let node = crate::tests::epmd_client()
                 .await
                 .get_node(node_name)
                 .await
@@ -378,24 +351,16 @@ mod tests {
             assert_eq!(node.name, node_name);
 
             // Register a new node.
-            let client = epmd_client().await;
+            let client = crate::tests::epmd_client().await;
             let new_node_name = "erl_dist_test_new_node";
-            let new_node = NodeEntry {
-                name: new_node_name.to_owned(),
-                port: 3000,
-                node_type: NodeType::Hidden,
-                protocol: TransportProtocol::TcpIpV4,
-                highest_version: DistributionProtocolVersion::V6,
-                lowest_version: DistributionProtocolVersion::V5,
-                extra: Vec::new(),
-            };
+            let new_node = NodeEntry::new_hidden(new_node_name, 3000);
             let (stream, _creation) = client
                 .register(new_node)
                 .await
                 .expect("failed to register a new node");
 
             // Get the information of the newly added Erlang node.
-            let node = epmd_client()
+            let node = crate::tests::epmd_client()
                 .await
                 .get_node(new_node_name)
                 .await
@@ -405,13 +370,16 @@ mod tests {
 
             // Deregister the node.
             std::mem::drop(stream);
-            let node = epmd_client()
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            let node = crate::tests::epmd_client()
                 .await
                 .get_node(new_node_name)
                 .await
                 .expect("failed to get node");
             assert!(node.is_none());
+
+            std::mem::drop(erl_node);
         });
-        std::mem::drop(erl_node);
     }
 }
