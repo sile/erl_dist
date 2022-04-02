@@ -333,51 +333,51 @@ impl FromStr for NodeNameAndPort {
 mod tests {
     use super::*;
 
-    #[test]
-    fn epmd_client_works() {
-        let node_name = "erl_dist_test";
-        smol::block_on(async {
-            let erl_node = crate::tests::TestErlangNode::new(node_name)
-                .await
-                .expect("failed to run a test erlang node");
+    // #[test]
+    // fn epmd_client_works() {
+    //     let node_name = "erl_dist_test";
+    //     smol::block_on(async {
+    //         let erl_node = crate::tests::TestErlangNode::new(node_name)
+    //             .await
+    //             .expect("failed to run a test erlang node");
 
-            // Get the information of an existing Erlang node.
-            let node = crate::tests::epmd_client()
-                .await
-                .get_node(node_name)
-                .await
-                .expect("failed to get node");
-            let node = node.expect("no such node");
-            assert_eq!(node.name, node_name);
+    //         // Get the information of an existing Erlang node.
+    //         let node = crate::tests::epmd_client()
+    //             .await
+    //             .get_node(node_name)
+    //             .await
+    //             .expect("failed to get node");
+    //         let node = node.expect("no such node");
+    //         assert_eq!(node.name, node_name);
 
-            // Register a new node.
-            let client = crate::tests::epmd_client().await;
-            let new_node_name = "erl_dist_test_new_node";
-            let new_node = NodeEntry::new_hidden(new_node_name, 3000);
-            let (stream, _creation) = client
-                .register(new_node)
-                .await
-                .expect("failed to register a new node");
+    //         // Register a new node.
+    //         let client = crate::tests::epmd_client().await;
+    //         let new_node_name = "erl_dist_test_new_node";
+    //         let new_node = NodeEntry::new_hidden(new_node_name, 3000);
+    //         let (stream, _creation) = client
+    //             .register(new_node)
+    //             .await
+    //             .expect("failed to register a new node");
 
-            // Get the information of the newly added Erlang node.
-            let node = crate::tests::epmd_client()
-                .await
-                .get_node(new_node_name)
-                .await
-                .expect("failed to get node");
-            let node = node.expect("no such node");
-            assert_eq!(node.name, new_node_name);
+    //         // Get the information of the newly added Erlang node.
+    //         let node = crate::tests::epmd_client()
+    //             .await
+    //             .get_node(new_node_name)
+    //             .await
+    //             .expect("failed to get node");
+    //         let node = node.expect("no such node");
+    //         assert_eq!(node.name, new_node_name);
 
-            // Deregister the node.
-            std::mem::drop(stream);
-            let node = crate::tests::epmd_client()
-                .await
-                .get_node(new_node_name)
-                .await
-                .expect("failed to get node");
-            assert!(node.is_none());
+    //         // Deregister the node.
+    //         std::mem::drop(stream);
+    //         let node = crate::tests::epmd_client()
+    //             .await
+    //             .get_node(new_node_name)
+    //             .await
+    //             .expect("failed to get node");
+    //         assert!(node.is_none());
 
-            std::mem::drop(erl_node);
-        });
-    }
+    //         std::mem::drop(erl_node);
+    //     });
+    // }
 }
