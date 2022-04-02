@@ -1,5 +1,7 @@
 use byteorder::{BigEndian, ByteOrder as _, WriteBytesExt};
+use eetf::{DecodeError, EncodeError, FixInteger, Term, Tuple};
 use futures::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
+use std::io::{Read, Write};
 
 #[derive(Debug)]
 pub struct Connection<T> {
@@ -249,3 +251,169 @@ where
         self.consume_remaining_bytes().await
     }
 }
+
+pub trait ReadTermExt: Read {
+    fn read_tuple(&mut self) -> Result<Tuple, DecodeError> {
+        let term = self.read_term()?;
+        term.try_into()
+            .map_err(|value| DecodeError::UnexpectedType {
+                value,
+                expected: "Tuple".to_owned(),
+            })
+    }
+
+    fn read_term(&mut self) -> Result<Term, DecodeError> {
+        Term::decode(self)
+    }
+}
+
+impl<T: Read> ReadTermExt for T {}
+
+pub trait WriteTermExt: Write {
+    fn write_tagged_tuple1(&mut self, tag: i32) -> Result<(), EncodeError> {
+        let tuple = Tuple {
+            elements: vec![Term::from(FixInteger { value: tag as i32 })],
+        };
+        self.write_term(tuple)
+    }
+
+    fn write_tagged_tuple3<T0, T1>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
+    fn write_tagged_tuple4<T0, T1, T2>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+        term2: T2,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+        Term: From<T2>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+                Term::from(term2),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
+    fn write_tagged_tuple5<T0, T1, T2, T3>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+        term2: T2,
+        term3: T3,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+        Term: From<T2>,
+        Term: From<T3>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+                Term::from(term2),
+                Term::from(term3),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
+    fn write_tagged_tuple6<T0, T1, T2, T3, T4>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+        term2: T2,
+        term3: T3,
+        term4: T4,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+        Term: From<T2>,
+        Term: From<T3>,
+        Term: From<T4>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+                Term::from(term2),
+                Term::from(term3),
+                Term::from(term4),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_tagged_tuple7<T0, T1, T2, T3, T4, T5>(
+        &mut self,
+        tag: i32,
+        term0: T0,
+        term1: T1,
+        term2: T2,
+        term3: T3,
+        term4: T4,
+        term5: T5,
+    ) -> Result<(), EncodeError>
+    where
+        Term: From<T0>,
+        Term: From<T1>,
+        Term: From<T2>,
+        Term: From<T3>,
+        Term: From<T4>,
+        Term: From<T5>,
+    {
+        let tuple = Tuple {
+            elements: vec![
+                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(term0),
+                Term::from(term1),
+                Term::from(term2),
+                Term::from(term3),
+                Term::from(term4),
+                Term::from(term5),
+            ],
+        };
+        self.write_term(tuple)
+    }
+
+    fn write_term<T>(&mut self, term: T) -> Result<(), EncodeError>
+    where
+        Term: From<T>,
+    {
+        Term::from(term).encode(self)
+    }
+}
+
+impl<T: Write> WriteTermExt for T {}

@@ -17,6 +17,7 @@ pub mod message;
 pub mod node;
 
 mod channel;
+mod eetf_ext;
 mod flags;
 mod io;
 

@@ -1,217 +1,15 @@
-// //! Messages passed between distributed nodes.
-// //!
-// //! Reference: [12.3 Protocol between Connected Nodes]
-// //! (http://erlang.org/doc/apps/erts/erl_dist_protocol.html#id105440).
-// //!
-// //! Note that distribution headers are not supported in the current version.
+//! Messages passed between distributed nodes, and channels for those messages.
+//!
+//! Reference: [Protocol between Connected Nodes]
+//! (https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#protocol-between-connected-nodes)
+//!
+//! Note that distribution headers are not supported in the current version.
+use crate::eetf_ext;
+use crate::io::{ReadTermExt, WriteTermExt};
 use eetf::{Atom, DecodeError, EncodeError, FixInteger, Pid, Reference, Term, Tuple};
 use std::io::{Read, Write};
 
 pub use crate::channel::{channel, Receiver, RecvError, SendError, Sender};
-
-trait ReadTermExt: Read {
-    fn read_tuple(&mut self) -> Result<Tuple, DecodeError> {
-        let term = self.read_term()?;
-        term.try_into()
-            .map_err(|value| DecodeError::UnexpectedType {
-                value,
-                expected: "Tuple".to_owned(),
-            })
-    }
-
-    fn read_term(&mut self) -> Result<Term, DecodeError> {
-        Term::decode(self)
-    }
-}
-
-impl<T: Read> ReadTermExt for T {}
-
-trait WriteTermExt: Write {
-    fn write_tagged_tuple1(&mut self, tag: i32) -> Result<(), EncodeError> {
-        let tuple = Tuple {
-            elements: vec![Term::from(FixInteger { value: tag as i32 })],
-        };
-        self.write_term(tuple)
-    }
-
-    fn write_tagged_tuple3<T0, T1>(
-        &mut self,
-        tag: i32,
-        term0: T0,
-        term1: T1,
-    ) -> Result<(), EncodeError>
-    where
-        Term: From<T0>,
-        Term: From<T1>,
-    {
-        let tuple = Tuple {
-            elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
-                Term::from(term0),
-                Term::from(term1),
-            ],
-        };
-        self.write_term(tuple)
-    }
-
-    fn write_tagged_tuple4<T0, T1, T2>(
-        &mut self,
-        tag: i32,
-        term0: T0,
-        term1: T1,
-        term2: T2,
-    ) -> Result<(), EncodeError>
-    where
-        Term: From<T0>,
-        Term: From<T1>,
-        Term: From<T2>,
-    {
-        let tuple = Tuple {
-            elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
-                Term::from(term0),
-                Term::from(term1),
-                Term::from(term2),
-            ],
-        };
-        self.write_term(tuple)
-    }
-
-    fn write_tagged_tuple5<T0, T1, T2, T3>(
-        &mut self,
-        tag: i32,
-        term0: T0,
-        term1: T1,
-        term2: T2,
-        term3: T3,
-    ) -> Result<(), EncodeError>
-    where
-        Term: From<T0>,
-        Term: From<T1>,
-        Term: From<T2>,
-        Term: From<T3>,
-    {
-        let tuple = Tuple {
-            elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
-                Term::from(term0),
-                Term::from(term1),
-                Term::from(term2),
-                Term::from(term3),
-            ],
-        };
-        self.write_term(tuple)
-    }
-
-    fn write_tagged_tuple6<T0, T1, T2, T3, T4>(
-        &mut self,
-        tag: i32,
-        term0: T0,
-        term1: T1,
-        term2: T2,
-        term3: T3,
-        term4: T4,
-    ) -> Result<(), EncodeError>
-    where
-        Term: From<T0>,
-        Term: From<T1>,
-        Term: From<T2>,
-        Term: From<T3>,
-        Term: From<T4>,
-    {
-        let tuple = Tuple {
-            elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
-                Term::from(term0),
-                Term::from(term1),
-                Term::from(term2),
-                Term::from(term3),
-                Term::from(term4),
-            ],
-        };
-        self.write_term(tuple)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn write_tagged_tuple7<T0, T1, T2, T3, T4, T5>(
-        &mut self,
-        tag: i32,
-        term0: T0,
-        term1: T1,
-        term2: T2,
-        term3: T3,
-        term4: T4,
-        term5: T5,
-    ) -> Result<(), EncodeError>
-    where
-        Term: From<T0>,
-        Term: From<T1>,
-        Term: From<T2>,
-        Term: From<T3>,
-        Term: From<T4>,
-        Term: From<T5>,
-    {
-        let tuple = Tuple {
-            elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
-                Term::from(term0),
-                Term::from(term1),
-                Term::from(term2),
-                Term::from(term3),
-                Term::from(term4),
-                Term::from(term5),
-            ],
-        };
-        self.write_term(tuple)
-    }
-
-    fn write_term<T>(&mut self, term: T) -> Result<(), EncodeError>
-    where
-        Term: From<T>,
-    {
-        Term::from(term).encode(self)
-    }
-}
-
-impl<T: Write> WriteTermExt for T {}
-
-trait TupleExt {
-    fn check_len(&self, n: usize) -> Result<(), DecodeError>;
-    // TODO: convert(?)
-    fn take_as<T>(&mut self, i: usize, expected: &str) -> Result<T, DecodeError>
-    where
-        Term: TryInto<T, Error = Term>;
-    fn take(&mut self, i: usize) -> Term;
-}
-
-impl TupleExt for Tuple {
-    fn check_len(&self, n: usize) -> Result<(), DecodeError> {
-        if self.elements.len() == n {
-            Ok(())
-        } else {
-            Err(DecodeError::UnexpectedType {
-                value: self.clone().into(),
-                expected: format!("{} elements tuple", n),
-            })
-        }
-    }
-
-    fn take_as<T>(&mut self, i: usize, expected: &str) -> Result<T, DecodeError>
-    where
-        Term: TryInto<T, Error = Term>,
-    {
-        let term = std::mem::replace(&mut self.elements[i], eetf::List::nil().into());
-        term.try_into()
-            .map_err(|value| DecodeError::UnexpectedType {
-                value,
-                expected: expected.to_owned(),
-            })
-    }
-
-    fn take(&mut self, i: usize) -> Term {
-        std::mem::replace(&mut self.elements[i], eetf::List::nil().into())
-    }
-}
 
 trait DistributionMessage: Sized {
     const OP: i32;
@@ -233,10 +31,8 @@ impl DistributionMessage for Link {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         Ok(Self { from_pid, to_pid })
     }
 }
@@ -255,10 +51,8 @@ impl DistributionMessage for Unlink {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         Ok(Self { from_pid, to_pid })
     }
 }
@@ -277,10 +71,8 @@ impl DistributionMessage for GroupLeader {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         Ok(Self { from_pid, to_pid })
     }
 }
@@ -297,7 +89,7 @@ impl DistributionMessage for NodeLink {
     }
 
     fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(1)?;
+        eetf_ext::check_tuple_len(&ctrl_msg, 1)?;
         Ok(Self {})
     }
 }
@@ -317,11 +109,8 @@ impl DistributionMessage for Exit {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let reason = ctrl_msg.take(3);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, reason) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_pid,
@@ -346,10 +135,8 @@ impl DistributionMessage for PayloadExit {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         let reason = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -376,11 +163,8 @@ impl DistributionMessage for PayloadExitTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let trace_token = ctrl_msg.take(3);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let reason = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -407,10 +191,8 @@ impl DistributionMessage for PayloadExit2 {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         let reason = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -437,11 +219,8 @@ impl DistributionMessage for PayloadExit2Tt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let trace_token = ctrl_msg.take(3);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let reason = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -467,11 +246,8 @@ impl DistributionMessage for Exit2 {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let reason = ctrl_msg.take(3);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, reason) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_pid,
@@ -502,12 +278,8 @@ impl DistributionMessage for ExitTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(5)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let trace_token = ctrl_msg.take(3);
-        let reason = ctrl_msg.take(4);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_pid,
@@ -539,12 +311,8 @@ impl DistributionMessage for Exit2Tt {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(5)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let trace_token = ctrl_msg.take(3);
-        let reason = ctrl_msg.take(4);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_pid,
@@ -569,9 +337,8 @@ impl DistributionMessage for Send {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (_, to_pid): (Term, _) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self { to_pid, message })
     }
@@ -593,10 +360,8 @@ impl DistributionMessage for SendTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let trace_token = ctrl_msg.take(3);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (_, trace_token, to_pid): (Term, _, _) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             to_pid,
@@ -622,10 +387,8 @@ impl DistributionMessage for SendSender {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -652,11 +415,8 @@ impl DistributionMessage for SendSenderTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let trace_token = ctrl_msg.take(3);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -683,10 +443,8 @@ impl DistributionMessage for RegSend {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
-        let to_name = ctrl_msg.take_as::<Atom>(3, "atom")?;
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, _, to_name): (_, Term, _) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -719,11 +477,9 @@ impl DistributionMessage for RegSendTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(5)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
-        let to_name = ctrl_msg.take_as::<Atom>(3, "atom")?;
-        let trace_token = ctrl_msg.take(4);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, _, to_name, trace_token): (_, Term, _, _) =
+            eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -749,11 +505,8 @@ impl DistributionMessage for MonitorP {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
-        let to_proc = ctrl_msg.take(2);
-        let reference = ctrl_msg.take_as::<Reference>(3, "ref")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_proc, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_proc,
@@ -784,12 +537,8 @@ impl DistributionMessage for MonitorPExit {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(5)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
-        let to_proc = ctrl_msg.take(2);
-        let reference = ctrl_msg.take_as::<Reference>(3, "ref")?;
-        let reason = ctrl_msg.take(4);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_proc, reference, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_proc,
@@ -816,11 +565,8 @@ impl DistributionMessage for PayloadMonitorPExit {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
-        let to_proc = ctrl_msg.take(2);
-        let reference = ctrl_msg.take_as::<Reference>(3, "ref")?;
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_proc, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let reason = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -846,11 +592,8 @@ impl DistributionMessage for DemonitorP {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "pid")?;
-        let to_proc = ctrl_msg.take(2);
-        let reference = ctrl_msg.take_as::<Reference>(3, "ref")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_proc, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         Ok(Self {
             from_pid,
             to_proc,
@@ -885,13 +628,9 @@ impl DistributionMessage for SpawnRequest {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(6)?;
-        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
-        let from_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
-        let group_leader = ctrl_msg.take_as::<Pid>(3, "pid")?;
-        let mfa = ctrl_msg.take(4);
-        let opt_list = ctrl_msg.take(5);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (req_id, from_pid, group_leader, mfa, opt_list) =
+            eetf_ext::try_from_tagged_tuple6(ctrl_msg)?;
         let arg_list = reader.read_term()?;
         Ok(Self {
             req_id,
@@ -932,14 +671,9 @@ impl DistributionMessage for SpawnRequestTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(7)?;
-        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
-        let from_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
-        let group_leader = ctrl_msg.take_as::<Pid>(3, "pid")?;
-        let mfa = ctrl_msg.take(4);
-        let opt_list = ctrl_msg.take(5);
-        let trace_token = ctrl_msg.take(6);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (req_id, from_pid, group_leader, mfa, opt_list, trace_token) =
+            eetf_ext::try_from_tagged_tuple7(ctrl_msg)?;
         let arg_list = reader.read_term()?;
         Ok(Self {
             req_id,
@@ -969,12 +703,8 @@ impl DistributionMessage for SpawnReply {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(5)?;
-        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
-        let flags = ctrl_msg.take_as::<FixInteger>(3, "integer")?;
-        let result = ctrl_msg.take(4);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (req_id, to_pid, flags, result) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
         Ok(Self {
             req_id,
             to_pid,
@@ -1008,13 +738,9 @@ impl DistributionMessage for SpawnReplyTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(6)?;
-        let req_id = ctrl_msg.take_as::<Reference>(1, "ref")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(2, "pid")?;
-        let flags = ctrl_msg.take_as::<FixInteger>(3, "integer")?;
-        let result = ctrl_msg.take(4);
-        let trace_token = ctrl_msg.take(5);
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (req_id, to_pid, flags, result, trace_token) =
+            eetf_ext::try_from_tagged_tuple6(ctrl_msg)?;
         Ok(Self {
             req_id,
             to_pid,
@@ -1040,11 +766,8 @@ impl DistributionMessage for UnlinkId {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let id = ctrl_msg.take(1);
-        let from_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(3, "Pid")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (id, from_pid, to_pid) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         Ok(Self {
             id,
             from_pid,
@@ -1068,11 +791,8 @@ impl DistributionMessage for UnlinkIdAck {
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let id = ctrl_msg.take(1);
-        let from_pid = ctrl_msg.take_as::<Pid>(2, "Pid")?;
-        let to_pid = ctrl_msg.take_as::<Pid>(3, "Pid")?;
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (id, from_pid, to_pid) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         Ok(Self {
             id,
             from_pid,
@@ -1097,10 +817,8 @@ impl DistributionMessage for AliasSend {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(3)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let alias = ctrl_msg.take(2);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, alias) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -1127,11 +845,8 @@ impl DistributionMessage for AliasSendTt {
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, mut ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        ctrl_msg.check_len(4)?;
-        let from_pid = ctrl_msg.take_as::<Pid>(1, "Pid")?;
-        let alias = ctrl_msg.take(2);
-        let trace_token = ctrl_msg.take(3);
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, alias, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let message = reader.read_term()?;
         Ok(Self {
             from_pid,
@@ -1245,7 +960,10 @@ impl Message {
             }
             .into());
         }
-        let op = ctrl_msg.take_as::<FixInteger>(0, "integer")?;
+        let op: FixInteger = eetf_ext::try_from_term(
+            std::mem::replace(&mut ctrl_msg.elements[0], eetf_ext::nil()),
+            "integer",
+        )?;
         let msg = match op.value {
             Link::OP => Link::read_from(reader, ctrl_msg).map(Self::Link)?,
             Send::OP => Send::read_from(reader, ctrl_msg).map(Self::Send)?,
