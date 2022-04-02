@@ -528,4 +528,81 @@ pub enum HandshakeError {
     Io(#[from] std::io::Error),
 }
 
-// TODO: add test
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt;
+
+    #[test]
+    fn client_side_handshake_works() {
+        let peer_name = "erl_dist_test";
+        smol::block_on(async {
+            let erl_node = crate::tests::TestErlangNode::new(peer_name)
+                .await
+                .expect("failed to run a test erlang node");
+
+            let peer_entry = crate::tests::epmd_client()
+                .await
+                .get_node(peer_name)
+                .await
+                .expect("failed to get node");
+            let peer_entry = peer_entry.expect("no such node");
+
+            let connection = smol::net::TcpStream::connect(("localhost", peer_entry.port))
+                .await
+                .expect("failed to connect");
+            let local_node = LocalNode::new("foo@localhost".parse().unwrap(), Creation::random());
+            let mut handshake =
+                ClientSideHandshake::new(connection, local_node, crate::tests::COOKIE);
+            let status = handshake
+                .execute_send_name()
+                .await
+                .expect("failed to execute send name");
+            assert_eq!(status, HandshakeStatus::Ok);
+            let (_, peer_node) = handshake
+                .execute_rest(true)
+                .await
+                .expect("failed to execute handshake");
+            assert_eq!(peer_entry.name, peer_node.name.name());
+
+            std::mem::drop(erl_node);
+        });
+    }
+
+    #[test]
+    fn server_side_handshake_works() {
+        smol::block_on(async {
+            let listener = smol::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+            let listening_port = listener.local_addr().unwrap().port();
+            let (tx, rx) = futures::channel::oneshot::channel();
+
+            smol::spawn(async move {
+                let connection = smol::net::TcpStream::connect(("localhost", listening_port))
+                    .await
+                    .unwrap();
+                let local_node =
+                    LocalNode::new("foo@localhost".parse().unwrap(), Creation::random());
+                let mut handshake =
+                    ClientSideHandshake::new(connection, local_node, crate::tests::COOKIE);
+                let _status = handshake.execute_send_name().await.unwrap();
+                let (connection, _) = handshake.execute_rest(true).await.unwrap();
+                let _ = tx.send(connection);
+            })
+            .detach();
+
+            let mut incoming = listener.incoming();
+            if let Some(connection) = incoming.next().await {
+                let local_node =
+                    LocalNode::new("bar@localhost".parse().unwrap(), Creation::random());
+                let mut handshake =
+                    ServerSideHandshake::new(connection.unwrap(), local_node, crate::tests::COOKIE);
+                let (peer_name, is_dynamic) = handshake.execute_recv_name().await.unwrap();
+                assert_eq!(peer_name.name(), "foo");
+                assert!(!is_dynamic);
+
+                handshake.execute_rest(HandshakeStatus::Ok).await.unwrap();
+            }
+            let _ = rx.await;
+        })
+    }
+}

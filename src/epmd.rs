@@ -332,52 +332,17 @@ impl FromStr for NodeNameAndPort {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::{Child, Command};
-
-    #[derive(Debug)]
-    struct TestErlangNode {
-        child: Child,
-    }
-
-    impl TestErlangNode {
-        async fn new(name: &str) -> anyhow::Result<Self> {
-            let child = Command::new("erl")
-                .args(&["-sname", name, "-noshell"])
-                .spawn()?;
-            let start = std::time::Instant::now();
-            while epmd_client().await.get_node(name).await?.is_none() {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                if start.elapsed() > std::time::Duration::from_secs(10) {
-                    break;
-                }
-            }
-            Ok(Self { child })
-        }
-    }
-
-    impl Drop for TestErlangNode {
-        fn drop(&mut self) {
-            let _ = self.child.kill();
-        }
-    }
-
-    async fn epmd_client() -> EpmdClient<smol::net::TcpStream> {
-        let stream = smol::net::TcpStream::connect(("127.0.0.1", DEFAULT_EPMD_PORT))
-            .await
-            .unwrap();
-        EpmdClient::new(stream)
-    }
 
     #[test]
     fn epmd_client_works() {
         let node_name = "erl_dist_test";
         smol::block_on(async {
-            let erl_node = TestErlangNode::new(node_name)
+            let erl_node = crate::tests::TestErlangNode::new(node_name)
                 .await
                 .expect("failed to run a test erlang node");
 
             // Get the information of an existing Erlang node.
-            let node = epmd_client()
+            let node = crate::tests::epmd_client()
                 .await
                 .get_node(node_name)
                 .await
@@ -386,7 +351,7 @@ mod tests {
             assert_eq!(node.name, node_name);
 
             // Register a new node.
-            let client = epmd_client().await;
+            let client = crate::tests::epmd_client().await;
             let new_node_name = "erl_dist_test_new_node";
             let new_node = NodeEntry::new_hidden(new_node_name, 3000);
             let (stream, _creation) = client
@@ -395,7 +360,7 @@ mod tests {
                 .expect("failed to register a new node");
 
             // Get the information of the newly added Erlang node.
-            let node = epmd_client()
+            let node = crate::tests::epmd_client()
                 .await
                 .get_node(new_node_name)
                 .await
@@ -405,7 +370,7 @@ mod tests {
 
             // Deregister the node.
             std::mem::drop(stream);
-            let node = epmd_client()
+            let node = crate::tests::epmd_client()
                 .await
                 .get_node(new_node_name)
                 .await

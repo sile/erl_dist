@@ -68,7 +68,7 @@ fn main() -> anyhow::Result<()> {
         let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
         let mut handshake = erl_dist::handshake::ClientSideHandshake::new(
             stream,
-            erl_dist::node::Node::new(args.self_node.clone(), creation),
+            erl_dist::node::LocalNode::new(args.self_node.clone(), creation),
             &args.cookie,
         );
         let _status = handshake.execute_send_name().await?; // TODO:

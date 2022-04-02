@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
             let stream = stream?;
-            let local_node = erl_dist::node::Node::new(args.self_node.clone(), creation);
+            let local_node = erl_dist::node::LocalNode::new(args.self_node.clone(), creation);
             let cookie = args.cookie.clone();
             smol::spawn(async move {
                 match handle_client(local_node, cookie, stream).await {
@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn handle_client(
-    local_node: erl_dist::node::Node,
+    local_node: erl_dist::node::LocalNode,
     cookie: String,
     stream: smol::net::TcpStream,
 ) -> anyhow::Result<()> {
