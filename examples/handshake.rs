@@ -71,7 +71,9 @@ fn main() -> anyhow::Result<()> {
             erl_dist::node::LocalNode::new(args.self_node.clone(), creation),
             &args.cookie,
         );
-        let _status = handshake.execute_send_name().await?; // TODO:
+        let _status = handshake
+            .execute_send_name(erl_dist::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
+            .await?; // TODO:
         let (_, peer_node) = handshake.execute_rest(true).await?;
         println!("Handshake finished: peer={:?}", peer_node);
 

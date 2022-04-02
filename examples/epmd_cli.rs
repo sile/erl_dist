@@ -66,10 +66,10 @@ fn main() -> anyhow::Result<()> {
                     let result = serde_json::json!({
                         "name": node.name,
                         "port": node.port,
-                        "node_type": format!("{:?} ({})", node.node_type, node.node_type as u8),
-                        "protocol": format!("{:?} ({})", node.protocol, node.protocol as u8),
-                        "highest_version": node.highest_version as u16,
-                        "lowest_version": node.lowest_version as u16,
+                        "node_type": format!("{:?} ({})", node.node_type, u8::from(node.node_type)),
+                         "protocol": format!("{:?} ({})", node.protocol, u8::from(node.protocol)),
+                        "highest_version": node.highest_version,
+                         "lowest_version": node.lowest_version,
                          "extra": node.extra
                     });
                     println!("{}", serde_json::to_string_pretty(&result)?);

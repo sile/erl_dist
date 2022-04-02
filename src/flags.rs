@@ -132,7 +132,7 @@ impl Default for DistributionFlags {
     /// This is equivalent to the following code:
     ///
     /// ```no_run
-    /// # use erl_dist::capability::DistributionFlags;
+    /// # use erl_dist::DistributionFlags;
     /// DistributionFlags::EXTENDED_REFERENCES | DistributionFlags::EXTENDED_PIDS_PORTS |
     /// DistributionFlags::FUN_TAGS | DistributionFlags::NEW_FUN_TAGS |
     /// DistributionFlags::EXPORT_PTR_TAG | DistributionFlags::BIT_BINARIES |
@@ -156,4 +156,20 @@ impl Default for DistributionFlags {
     }
 }
 
-// TODO: mandatory list
+impl DistributionFlags {
+    /// Gets the flags the this crate supports.
+    ///
+    /// This is the same as [`DistributionFlags::default()`].
+    pub fn supported() -> Self {
+        Self::EXTENDED_REFERENCES
+            | Self::FUN_TAGS
+            | Self::NEW_FUN_TAGS
+            | Self::EXTENDED_PIDS_PORTS
+            | Self::EXPORT_PTR_TAG
+            | Self::BIT_BINARIES
+            | Self::NEW_FLOATS
+            | Self::UTF8_ATOMS
+            | Self::MAP_TAGS
+            | Self::BIG_CREATION
+    }
+}
