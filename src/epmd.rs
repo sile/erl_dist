@@ -5,7 +5,7 @@
 //!
 //! See [EPMD Protocol (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#epmd-protocol)
 //! for more details.
-use crate::handshake::{
+use crate::capability::{
     HIGHEST_DISTRIBUTION_PROTOCOL_VERSION, LOWEST_DISTRIBUTION_PROTOCOL_VERSION,
 };
 #[cfg(doc)]

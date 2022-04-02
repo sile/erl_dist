@@ -1,4 +1,4 @@
-use crate::handshake::DistributionFlags;
+use crate::capability::DistributionFlags;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeNameError {

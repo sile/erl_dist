@@ -8,6 +8,7 @@
 //!
 //! - Client Node Example: [send_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
 //! - Server Node Example: [recv_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
+pub mod capability;
 pub mod epmd;
 pub mod handshake;
 pub mod message;

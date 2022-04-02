@@ -5,18 +5,11 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
+use crate::capability::DistributionFlags;
 use crate::node::{Creation, Node, NodeName};
 use crate::socket::Socket;
 use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
-
-pub use self::flags::DistributionFlags;
-
-// TODO: move(?)
-pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
-pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
-
-mod flags;
 
 #[derive(Debug)]
 pub struct ClientSideHandshake<T> {

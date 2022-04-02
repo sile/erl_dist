@@ -1,3 +1,6 @@
+pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
+pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
+
 bitflags::bitflags! {
     // capability flags
     /// Distribution flags.
@@ -133,7 +136,7 @@ impl Default for DistributionFlags {
     /// This is equivalent to the following code:
     ///
     /// ```no_run
-    /// # use erl_dist::handshake::DistributionFlags;
+    /// # use erl_dist::capability::DistributionFlags;
     /// DistributionFlags::DFLAG_EXTENDED_REFERENCES | DistributionFlags::DFLAG_EXTENDED_PIDS_PORTS |
     /// DistributionFlags::DFLAG_FUN_TAGS | DistributionFlags::DFLAG_NEW_FUN_TAGS |
     /// DistributionFlags::DFLAG_EXPORT_PTR_TAG | DistributionFlags::DFLAG_BIT_BINARIES |
