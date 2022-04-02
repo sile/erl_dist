@@ -5,7 +5,6 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
-#![warn(missing_docs)]
 use crate::capability::DistributionFlags;
 use crate::node::{Creation, LocalNode, NodeName, PeerNode};
 use crate::socket::Socket;
@@ -26,7 +25,7 @@ impl<T> ClientSideHandshake<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    /// Makes a new `ClientSideHandshake` instance.
+    /// Makes a new [`ClientSideHandshake`] instance.
     pub fn new(connection: T, local_node: LocalNode, cookie: &str) -> Self {
         Self {
             local_node,
@@ -37,6 +36,10 @@ where
         }
     }
 
+    /// Executes the first part of the handshake protocol.
+    ///
+    /// To complete the handshake, you then need to call [`ClientSideHandshake::execute_rest()`] method
+    /// taking into account the [`HandshakeStatus`] replied from the peer node.
     pub async fn execute_send_name(&mut self) -> Result<HandshakeStatus, HandshakeError> {
         self.send_name().await?;
         let status = self.recv_status().await?;
@@ -44,6 +47,14 @@ where
         Ok(status)
     }
 
+    /// Executes the rest part of the handshake protocol.
+    ///
+    /// You must need to have called [`ClientSideHandshake::execute_send_name()`] before this method.
+    /// In a case where [`HandshakeStatus`] of the first part is [`HandshakeStatus::Alive`],
+    /// the `do_continue` argument is used to indicate whether this handshake should continue or not
+    /// (otherwise the argument is ignored).
+    ///
+    /// If the [`HandshakeStatus`] returned is a non-ok status, this method call fails immediately.
     pub async fn execute_rest(
         mut self,
         do_continue: bool,
@@ -112,7 +123,7 @@ where
                     let n = u64::from(bytes.read_u16::<BigEndian>()?);
                     let mut name = String::new();
                     bytes.take(n).read_to_string(&mut name)?;
-                    HandshakeStatus::Named(name)
+                    HandshakeStatus::Named { name }
                 } else {
                     let status = String::from_utf8_lossy(&status).to_string();
                     return Err(HandshakeError::UnknownStatus { status });
@@ -206,7 +217,7 @@ where
         let mut digest = [0; 16];
         reader.read_exact(&mut digest).await?;
         if digest != self.local_challenge.digest(&self.cookie).0 {
-            return Err(HandshakeError::InvalidDigest);
+            return Err(HandshakeError::CookieMismatch);
         }
         reader.finish().await?;
 
@@ -214,6 +225,7 @@ where
     }
 }
 
+/// Server-side handshake.
 #[derive(Debug)]
 pub struct ServerSideHandshake<T> {
     local_node: LocalNode,
@@ -227,6 +239,7 @@ impl<T> ServerSideHandshake<T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Makes a new [`ServerSideHandshake`] instance.
     pub fn new(connection: T, local_node: LocalNode, cookie: &str) -> Self {
         Self {
             local_node,
@@ -237,6 +250,14 @@ where
         }
     }
 
+    /// Executes the first part of the handshake protocol.
+    ///
+    /// To complete the handshake, you then need to call [`ServerSideHandshake::execute_rest()`] method
+    /// taking into account the [`NodeName`] sent from the peer node.
+    ///
+    /// Note that the second value of the result tuple indicates whether
+    /// the peer requested a dynamic node name. If the value is `true` and
+    /// you want to continue the handshake, you need to use [`HandshakeStatus::Named`] for the reply.
     pub async fn execute_recv_name(&mut self) -> Result<(NodeName, bool), HandshakeError> {
         let mut reader = self.socket.message_reader().await?;
         let tag = reader.read_u8().await?;
@@ -280,6 +301,12 @@ where
         Ok((name, is_dynamic))
     }
 
+    /// Executes the rest part of the handshake protocol.
+    ///
+    /// You must need to have called [`ServerSideHandshake::execute_recv_name()`] before this method.
+    ///
+    /// Note that if the [`HandshakeStatus`] is a non-ok status, this method call fails just
+    /// after sending the status to the peer node.
     pub async fn execute_rest(
         mut self,
         status: HandshakeStatus,
@@ -318,7 +345,7 @@ where
             HandshakeStatus::Nok => writer.write_all(b"nok")?,
             HandshakeStatus::NotAllowed => writer.write_all(b"not_allowed")?,
             HandshakeStatus::Alive => writer.write_all(b"alive")?,
-            HandshakeStatus::Named(name) => {
+            HandshakeStatus::Named { name } => {
                 writer.write_all(b"named:")?;
                 writer.write_u16(name.len() as u16)?;
                 writer.write_all(name.as_bytes())?;
@@ -392,7 +419,7 @@ where
         reader.finish().await?;
 
         if self.local_challenge.digest(&self.cookie) != digest {
-            return Err(HandshakeError::InvalidDigest);
+            return Err(HandshakeError::CookieMismatch);
         }
 
         Ok(peer_challenge)
@@ -410,14 +437,41 @@ where
     }
 }
 
+/// Handshake status.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HandshakeStatus {
+    /// The handshake will continue.
     Ok,
+
+    /// The handshake will continue.
+    ///
+    /// The client-side node is informed that the server-side node has another ongoing connection attempt
+    /// that will be shut down (simultaneous connect where the client-side node's name is
+    /// greater than the server-side node's name, compared literally).
     OkSimultaneous,
+
+    /// The handshake will not continue.
+    ///
+    /// The client-side already has an ongoing handshake, which it itself has initiated
+    /// (simultaneous connect where the server-side node's name is greater than the client-side node's).
     Nok,
+
+    /// The connection is disallowed for some (unspecified) security reason.
     NotAllowed,
+
+    /// A connection to the node is already active.
+    ///
+    /// This either means that node the client-side node is confused or
+    /// that the TCP connection breakdown of a previous node with this name has not yet reached the server-side node.
+    ///
+    /// The client-side node then decides whether to continue or not the handshake process.
     Alive,
-    Named(String),
+
+    /// The handshake willl continue, but the client-side node requested a dynamic node name.
+    Named {
+        /// Dynamic node name that the server-side node generated.
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -436,7 +490,9 @@ impl Challenge {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Digest([u8; 16]);
 
+/// Possible errors during handshake.
 #[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
 pub enum HandshakeError {
     #[error("peer already has an ongoing handshake with this node")]
     OngoingHandshake,
@@ -453,8 +509,8 @@ pub enum HandshakeError {
     #[error("received an unexpected tag {tag} for {message:?}")]
     UnexpectedTag { message: &'static str, tag: u8 },
 
-    #[error("invalid digest value (maybe cookie mismatch)")]
-    InvalidDigest,
+    #[error("cookie mismatch")]
+    CookieMismatch,
 
     #[error("the 'version' value of an old 'send_name' message must be 5, but got {value}")]
     InvalidVersionValue { value: u16 },
