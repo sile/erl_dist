@@ -48,8 +48,6 @@ impl Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
-
     let args = Args::parse();
     smol::block_on(async {
         let peer_node = args
