@@ -6,6 +6,8 @@
 use crate::eetf_ext;
 use crate::io::{ReadTermExt, WriteTermExt};
 use crate::term::{Atom, FixInteger, List, Mfa, Pid, PidOrAtom, Reference, Term, Tuple};
+#[cfg(doc)]
+use crate::DistributionFlags;
 use eetf::{DecodeError, EncodeError};
 use std::io::{Read, Write};
 
@@ -17,7 +19,9 @@ trait DistributionMessage: Sized {
     fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError>;
 }
 
+/// This signal is sent by `from_pid` in order to create a link between `from_pid` and `to_pid`.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct Link {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -37,64 +41,33 @@ impl DistributionMessage for Link {
     }
 }
 
+/// This signal is used to send a message to `to_pid`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Unlink {
-    pub from_pid: Pid,
+#[allow(missing_docs)]
+pub struct Send {
     pub to_pid: Pid,
+    pub message: Term,
 }
 
-impl DistributionMessage for Unlink {
-    const OP: i32 = 4;
+impl DistributionMessage for Send {
+    const OP: i32 = 2;
 
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_tagged_tuple3(Self::OP, Tuple::nil(), self.to_pid)?;
+        writer.write_term(self.message)?;
         Ok(())
     }
 
-    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
-        Ok(Self { from_pid, to_pid })
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (_, to_pid): (Term, _) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
+        let message = reader.read_term()?;
+        Ok(Self { to_pid, message })
     }
 }
 
+/// This signal is sent when a link has been broken.
 #[derive(Debug, Clone, PartialEq)]
-pub struct GroupLeader {
-    pub from_pid: Pid,
-    pub to_pid: Pid,
-}
-
-impl DistributionMessage for GroupLeader {
-    const OP: i32 = 7;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
-        Ok(Self { from_pid, to_pid })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct NodeLink {}
-
-impl DistributionMessage for NodeLink {
-    const OP: i32 = 5;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple1(Self::OP)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        eetf_ext::check_tuple_len(&ctrl_msg, 1)?;
-        Ok(Self {})
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct Exit {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -119,119 +92,103 @@ impl DistributionMessage for Exit {
     }
 }
 
+/// **DEPRECATED** This signal is sent by `from_pid` in order to remove a link between `from_pid` and `to_pid`.
+///
+/// This signal has been deprecated and will not be supported in OTP 26.
+/// For more information see the documentation of the [new link protocol](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#new_link_protocol).
 #[derive(Debug, Clone, PartialEq)]
-pub struct PayloadExit {
+#[allow(missing_docs)]
+pub struct Unlink {
     pub from_pid: Pid,
     pub to_pid: Pid,
-    pub reason: Term,
 }
 
-impl DistributionMessage for PayloadExit {
-    const OP: i32 = 24;
+impl DistributionMessage for Unlink {
+    const OP: i32 = 4;
 
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
         writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
-        writer.write_term(self.reason)?;
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
         let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
-        let reason = reader.read_term()?;
-        Ok(Self {
-            from_pid,
-            to_pid,
-            reason,
-        })
+        Ok(Self { from_pid, to_pid })
     }
 }
 
+/// Node link.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PayloadExitTt {
-    pub from_pid: Pid,
-    pub to_pid: Pid,
-    pub trace_token: Term,
-    pub reason: Term,
-}
+pub struct NodeLink;
 
-impl DistributionMessage for PayloadExitTt {
-    const OP: i32 = 25;
+impl DistributionMessage for NodeLink {
+    const OP: i32 = 5;
 
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
-        writer.write_term(self.reason)?;
+        writer.write_tagged_tuple1(Self::OP)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        eetf_ext::check_tuple_len(&ctrl_msg, 1)?;
+        Ok(Self {})
+    }
+}
+
+/// This signal is used to send a message to a named process.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct RegSend {
+    pub from_pid: Pid,
+    pub to_name: Atom,
+    pub message: Term,
+}
+
+impl DistributionMessage for RegSend {
+    const OP: i32 = 6;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, Tuple::nil(), self.to_name)?;
+        writer.write_term(self.message)?;
         Ok(())
     }
 
     fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
-        let reason = reader.read_term()?;
+        let (from_pid, _, to_name): (_, Term, _) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        let message = reader.read_term()?;
         Ok(Self {
             from_pid,
-            to_pid,
-            trace_token,
-            reason,
+            to_name,
+            message,
         })
     }
 }
 
+/// Group leader.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PayloadExit2 {
+#[allow(missing_docs)]
+pub struct GroupLeader {
     pub from_pid: Pid,
     pub to_pid: Pid,
-    pub reason: Term,
 }
 
-impl DistributionMessage for PayloadExit2 {
-    const OP: i32 = 26;
+impl DistributionMessage for GroupLeader {
+    const OP: i32 = 7;
 
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
         writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
-        writer.write_term(self.reason)?;
         Ok(())
     }
 
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
         let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
-        let reason = reader.read_term()?;
-        Ok(Self {
-            from_pid,
-            to_pid,
-            reason,
-        })
+        Ok(Self { from_pid, to_pid })
     }
 }
 
+/// This signal is sent by a call to the `erlang:exit/2` bif.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PayloadExit2Tt {
-    pub from_pid: Pid,
-    pub to_pid: Pid,
-    pub trace_token: Term,
-    pub reason: Term,
-}
-
-impl DistributionMessage for PayloadExit2Tt {
-    const OP: i32 = 27;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
-        writer.write_term(self.reason)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
-        let reason = reader.read_term()?;
-        Ok(Self {
-            from_pid,
-            to_pid,
-            trace_token,
-            reason,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct Exit2 {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -256,7 +213,38 @@ impl DistributionMessage for Exit2 {
     }
 }
 
+/// [`Send`] with a trace token.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct SendTt {
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub message: Term,
+}
+
+impl DistributionMessage for SendTt {
+    const OP: i32 = 12;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, Tuple::nil(), self.to_pid, self.trace_token)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (_, trace_token, to_pid): (Term, _, _) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        let message = reader.read_term()?;
+        Ok(Self {
+            to_pid,
+            trace_token,
+            message,
+        })
+    }
+}
+
+/// [`Exit`] with a trace token.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct ExitTt {
     pub from_pid: Pid,
     pub to_pid: Pid,
@@ -289,172 +277,9 @@ impl DistributionMessage for ExitTt {
     }
 }
 
+/// [`RegSend`] with a trace token.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Exit2Tt {
-    pub from_pid: Pid,
-    pub to_pid: Pid,
-    pub trace_token: Term,
-    pub reason: Term,
-}
-
-impl DistributionMessage for Exit2Tt {
-    const OP: i32 = 18;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple5(
-            Self::OP,
-            self.from_pid,
-            self.to_pid,
-            self.trace_token,
-            self.reason,
-        )?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid, trace_token, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
-        Ok(Self {
-            from_pid,
-            to_pid,
-            trace_token,
-            reason,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Send {
-    pub to_pid: Pid,
-    pub message: Term,
-}
-
-impl DistributionMessage for Send {
-    const OP: i32 = 2;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple3(Self::OP, Tuple::nil(), self.to_pid)?;
-        writer.write_term(self.message)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (_, to_pid): (Term, _) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
-        let message = reader.read_term()?;
-        Ok(Self { to_pid, message })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SendTt {
-    pub to_pid: Pid,
-    pub trace_token: Term,
-    pub message: Term,
-}
-
-impl DistributionMessage for SendTt {
-    const OP: i32 = 12;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, Tuple::nil(), self.to_pid, self.trace_token)?;
-        writer.write_term(self.message)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (_, trace_token, to_pid): (Term, _, _) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
-        let message = reader.read_term()?;
-        Ok(Self {
-            to_pid,
-            trace_token,
-            message,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SendSender {
-    pub from_pid: Pid,
-    pub to_pid: Pid,
-    pub message: Term,
-}
-
-impl DistributionMessage for SendSender {
-    const OP: i32 = 22;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
-        writer.write_term(self.message)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
-        let message = reader.read_term()?;
-        Ok(Self {
-            from_pid,
-            to_pid,
-            message,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SendSenderTt {
-    pub from_pid: Pid,
-    pub to_pid: Pid,
-    pub trace_token: Term,
-    pub message: Term,
-}
-
-impl DistributionMessage for SendSenderTt {
-    const OP: i32 = 23;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
-        writer.write_term(self.message)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
-        let message = reader.read_term()?;
-        Ok(Self {
-            from_pid,
-            to_pid,
-            trace_token,
-            message,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RegSend {
-    pub from_pid: Pid,
-    pub to_name: Atom,
-    pub message: Term,
-}
-
-impl DistributionMessage for RegSend {
-    const OP: i32 = 6;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, self.from_pid, Tuple::nil(), self.to_name)?;
-        writer.write_term(self.message)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, _, to_name): (_, Term, _) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
-        let message = reader.read_term()?;
-        Ok(Self {
-            from_pid,
-            to_name,
-            message,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct RegSendTt {
     pub from_pid: Pid,
     pub to_name: Atom,
@@ -490,7 +315,44 @@ impl DistributionMessage for RegSendTt {
     }
 }
 
+/// [`Exit2`] with a trace token.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct Exit2Tt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub reason: Term,
+}
+
+impl DistributionMessage for Exit2Tt {
+    const OP: i32 = 18;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple5(
+            Self::OP,
+            self.from_pid,
+            self.to_pid,
+            self.trace_token,
+            self.reason,
+        )?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+}
+
+/// `from_pid` = monitoring process and `to_proc` = monitored process pid or name (atom).
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct MonitorP {
     pub from_pid: Pid,
     pub to_proc: PidOrAtom,
@@ -515,7 +377,38 @@ impl DistributionMessage for MonitorP {
     }
 }
 
+/// `from_pid` = monitoring process and `to_proc` = monitored process pid or name (atom).
+///
+/// We include `from_pid` just in case we want to trace this.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct DemonitorP {
+    pub from_pid: Pid,
+    pub to_proc: PidOrAtom,
+    pub reference: Reference,
+}
+
+impl DistributionMessage for DemonitorP {
+    const OP: i32 = 20;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_proc, self.reference)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_proc, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        Ok(Self {
+            from_pid,
+            to_proc,
+            reference,
+        })
+    }
+}
+
+/// `from_proc` = monitored process pid or name (atom), `to_pid` = monitoring process, and `reason` = exit reason for the monitored process.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct MonitorPExit {
     pub from_pid: Pid,
     pub to_proc: PidOrAtom,
@@ -548,7 +441,189 @@ impl DistributionMessage for MonitorPExit {
     }
 }
 
+/// This control message replaces the [`Send`] control message and will be sent when the distribution flag `DistributionFlags::SEND_SENDER` has been negotiated in the connection setup handshake.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct SendSender {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub message: Term,
+}
+
+impl DistributionMessage for SendSender {
+    const OP: i32 = 22;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
+        let message = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            message,
+        })
+    }
+}
+
+/// [`SendSender`] with a trace token.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct SendSenderTt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub message: Term,
+}
+
+impl DistributionMessage for SendSenderTt {
+    const OP: i32 = 23;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
+        writer.write_term(self.message)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        let message = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
+            message,
+        })
+    }
+}
+
+/// This control message replaces the [`Exit`] control message and will be sent when the distribution flag [`DistributionFlags::EXIT_PAYLOAD`] has been negotiated in the connection setup handshake.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct PayloadExit {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExit {
+    const OP: i32 = 24;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+}
+
+/// [`PayloadExit`] with a trace token.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct PayloadExitTt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExitTt {
+    const OP: i32 = 25;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+}
+
+/// This control message replaces the [`Exit2`] control message and will be sent when the distribution flag [`DistributionFlags::EXIT_PAYLOAD`] has been negotiated in the connection setup handshake.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct PayloadExit2 {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExit2 {
+    const OP: i32 = 26;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple3(Self::OP, self.from_pid, self.to_pid)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid) = eetf_ext::try_from_tagged_tuple3(ctrl_msg)?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+}
+
+/// [`PayloadExit2`] with a trace token.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
+pub struct PayloadExit2Tt {
+    pub from_pid: Pid,
+    pub to_pid: Pid,
+    pub trace_token: Term,
+    pub reason: Term,
+}
+
+impl DistributionMessage for PayloadExit2Tt {
+    const OP: i32 = 27;
+
+    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
+        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_pid, self.trace_token)?;
+        writer.write_term(self.reason)?;
+        Ok(())
+    }
+
+    fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
+        let (from_pid, to_pid, trace_token) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        let reason = reader.read_term()?;
+        Ok(Self {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+}
+
+/// This control message replaces the [`MonitorPExit`] control message and will be sent when the distribution flag [`DistributionFlags::EXIT_PAYLOAD`] has been negotiated in the connection setup handshake.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct PayloadMonitorPExit {
     pub from_pid: Pid,
     pub to_proc: PidOrAtom,
@@ -577,32 +652,9 @@ impl DistributionMessage for PayloadMonitorPExit {
     }
 }
 
+/// This signal is sent by the `spawn_request()` BIF.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DemonitorP {
-    pub from_pid: Pid,
-    pub to_proc: PidOrAtom,
-    pub reference: Reference,
-}
-
-impl DistributionMessage for DemonitorP {
-    const OP: i32 = 20;
-
-    fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_proc, self.reference)?;
-        Ok(())
-    }
-
-    fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_proc, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
-        Ok(Self {
-            from_pid,
-            to_proc,
-            reference,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct SpawnRequest {
     pub req_id: Reference,
     pub from_pid: Pid,
@@ -643,7 +695,9 @@ impl DistributionMessage for SpawnRequest {
     }
 }
 
+/// [`SpawnRequest`] with a trace token.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct SpawnRequestTt {
     pub req_id: Reference,
     pub from_pid: Pid,
@@ -687,7 +741,9 @@ impl DistributionMessage for SpawnRequestTt {
     }
 }
 
+/// This signal is sent as a reply to a process previously sending a [`SpawnRequest`] signal.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct SpawnReply {
     pub req_id: Reference,
     pub to_pid: Pid,
@@ -714,7 +770,9 @@ impl DistributionMessage for SpawnReply {
     }
 }
 
+/// [`SpawnReply`] with a trace token.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct SpawnReplyTt {
     pub req_id: Reference,
     pub to_pid: Pid,
@@ -751,7 +809,12 @@ impl DistributionMessage for SpawnReplyTt {
     }
 }
 
+/// This signal is sent by `from_pid` in order to remove a link between `from_pid` and `to_pid`.
+///
+/// This unlink signal replaces the [`Unlink`] signal.
+/// This signal is only passed when the [new link protocol](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#new_link_protocol) has been negotiated using the [`DistributionFlags::UNLINK_ID`] distribution flag.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct UnlinkId {
     pub id: Term,
     pub from_pid: Pid,
@@ -776,7 +839,11 @@ impl DistributionMessage for UnlinkId {
     }
 }
 
+/// An unlink acknowledgement signal.
+///
+/// This signal is sent as an acknowledgement of the reception of an [`UnlinkId`] signal.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct UnlinkIdAck {
     pub id: Term,
     pub from_pid: Pid,
@@ -801,7 +868,11 @@ impl DistributionMessage for UnlinkIdAck {
     }
 }
 
+/// This control message is used when sending the message Message to the process identified by the process alias `alias`.
+///
+/// Nodes that can handle this control message sets the distribution flag [`DistributionFlags::ALIAS`] in the connection setup handshake.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct AliasSend {
     pub from_pid: Pid,
     pub alias: Reference,
@@ -828,7 +899,9 @@ impl DistributionMessage for AliasSend {
     }
 }
 
+/// [`AliasSend`] with a trace token.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct AliasSendTt {
     pub from_pid: Pid,
     pub alias: Reference,
@@ -858,10 +931,8 @@ impl DistributionMessage for AliasSendTt {
 }
 
 /// Message.
-///
-/// This provides various message construction functions.
-#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub enum Message {
     Link(Link),
     Send(Send),
@@ -893,19 +964,321 @@ pub enum Message {
     UnlinkIdAck(UnlinkIdAck),
     AliasSend(AliasSend),
     AliasSendTt(AliasSendTt),
+
+    /// Tick message used for keeping alive a connection.
+    ///
+    /// See also: [`net_ticktime` parameter](https://www.erlang.org/doc/man/kernel_app.html#net_ticktime)
     Tick,
 }
 
 impl Message {
+    /// Makes a [`Link`] message.
+    pub fn link(from_pid: Pid, to_pid: Pid) -> Self {
+        Self::Link(Link { from_pid, to_pid })
+    }
+
+    /// Makes a [`Send`] message.
     pub fn send(to_pid: Pid, message: Term) -> Self {
         Self::Send(Send { to_pid, message })
     }
 
+    /// Makes a [`Exit`] message.
+    pub fn exit(from_pid: Pid, to_pid: Pid, reason: Term) -> Self {
+        Self::Exit(Exit {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+
+    /// Makes a [`Unlink`] message.
+    pub fn unlink(from_pid: Pid, to_pid: Pid) -> Self {
+        Self::Unlink(Unlink { from_pid, to_pid })
+    }
+
+    /// Makes a [`NodeLink`] message.
+    pub fn node_link() -> Self {
+        Self::NodeLink(NodeLink)
+    }
+
+    /// Makes a [`RegSend`] message.
     pub fn reg_send(from_pid: Pid, to_name: Atom, message: Term) -> Self {
         Self::RegSend(RegSend {
             from_pid,
             to_name,
             message,
+        })
+    }
+
+    /// Makes a [`GroupLeader`] message.
+    pub fn group_leader(from_pid: Pid, to_pid: Pid) -> Self {
+        Self::GroupLeader(GroupLeader { from_pid, to_pid })
+    }
+
+    /// Makes a [`Exit2`] message.
+    pub fn exit2(from_pid: Pid, to_pid: Pid, reason: Term) -> Self {
+        Self::Exit2(Exit2 {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+
+    /// Makes a [`SendTt`] message.
+    pub fn send_tt(to_pid: Pid, message: Term, trace_token: Term) -> Self {
+        Self::SendTt(SendTt {
+            to_pid,
+            trace_token,
+            message,
+        })
+    }
+
+    /// Makes a [`ExitTt`] message.
+    pub fn exit_tt(from_pid: Pid, to_pid: Pid, reason: Term, trace_token: Term) -> Self {
+        Self::ExitTt(ExitTt {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+
+    /// Makes a [`RegSendTt`] message.
+    pub fn reg_send_tt(from_pid: Pid, to_name: Atom, message: Term, trace_token: Term) -> Self {
+        Self::RegSendTt(RegSendTt {
+            from_pid,
+            to_name,
+            trace_token,
+            message,
+        })
+    }
+
+    /// Makes a [`Exit2Tt`] message.
+    pub fn exit2_tt(from_pid: Pid, to_pid: Pid, reason: Term, trace_token: Term) -> Self {
+        Self::Exit2Tt(Exit2Tt {
+            from_pid,
+            to_pid,
+            trace_token,
+            reason,
+        })
+    }
+
+    /// Makes as [`MonitorP`] message.
+    pub fn monitor_p(from_pid: Pid, to_proc: PidOrAtom, reference: Reference) -> Self {
+        Self::MonitorP(MonitorP {
+            from_pid,
+            to_proc,
+            reference,
+        })
+    }
+
+    /// Makes as [`DemonitorP`] message.
+    pub fn demonitor_p(from_pid: Pid, to_proc: PidOrAtom, reference: Reference) -> Self {
+        Self::DemonitorP(DemonitorP {
+            from_pid,
+            to_proc,
+            reference,
+        })
+    }
+
+    /// Makes as [`MonitorPExit`] message.
+    pub fn monitor_p_exit(
+        from_pid: Pid,
+        to_proc: PidOrAtom,
+        reference: Reference,
+        reason: Term,
+    ) -> Self {
+        Self::MonitorPExit(MonitorPExit {
+            from_pid,
+            to_proc,
+            reference,
+            reason,
+        })
+    }
+
+    /// Makes a [`SendSender`] message.
+    pub fn send_sender(from_pid: Pid, to_pid: Pid, message: Term) -> Self {
+        Self::SendSender(SendSender {
+            from_pid,
+            to_pid,
+            message,
+        })
+    }
+
+    /// Makes a [`SendSenderTt`] message.
+    pub fn send_sender_tt(from_pid: Pid, to_pid: Pid, message: Term, trace_token: Term) -> Self {
+        Self::SendSenderTt(SendSenderTt {
+            from_pid,
+            to_pid,
+            message,
+            trace_token,
+        })
+    }
+
+    /// Makes a [`PayloadExit`] message.
+    pub fn payload_exit(from_pid: Pid, to_pid: Pid, reason: Term) -> Self {
+        Self::PayloadExit(PayloadExit {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+
+    /// Makes a [`PayloadExitTt`] message.
+    pub fn payload_exit_tt(from_pid: Pid, to_pid: Pid, reason: Term, trace_token: Term) -> Self {
+        Self::PayloadExitTt(PayloadExitTt {
+            from_pid,
+            to_pid,
+            reason,
+            trace_token,
+        })
+    }
+
+    /// Makes a [`PayloadExit2`] message.
+    pub fn payload_exit2(from_pid: Pid, to_pid: Pid, reason: Term) -> Self {
+        Self::PayloadExit2(PayloadExit2 {
+            from_pid,
+            to_pid,
+            reason,
+        })
+    }
+
+    /// Makes a [`PayloadExit2Tt`] message.
+    pub fn payload_exit2_tt(from_pid: Pid, to_pid: Pid, reason: Term, trace_token: Term) -> Self {
+        Self::PayloadExit2Tt(PayloadExit2Tt {
+            from_pid,
+            to_pid,
+            reason,
+            trace_token,
+        })
+    }
+
+    /// Makes a [`PayloadMonitorPExit`] message.
+    pub fn payload_monitor_p_exit(
+        from_pid: Pid,
+        to_proc: PidOrAtom,
+        reference: Reference,
+        reason: Term,
+    ) -> Self {
+        Self::PayloadMonitorPExit(PayloadMonitorPExit {
+            from_pid,
+            to_proc,
+            reference,
+            reason,
+        })
+    }
+
+    /// Makes a [`SpawnRequest`] message.
+    pub fn spawn_request(
+        req_id: Reference,
+        from_pid: Pid,
+        group_leader: Pid,
+        mfa: Mfa,
+        opt_list: List,
+        arg_list: List,
+    ) -> Self {
+        Self::SpawnRequest(SpawnRequest {
+            req_id,
+            from_pid,
+            group_leader,
+            mfa,
+            opt_list,
+            arg_list,
+        })
+    }
+
+    /// Makes a [`SpawnRequestTt`] message.
+    pub fn spawn_request_tt(
+        req_id: Reference,
+        from_pid: Pid,
+        group_leader: Pid,
+        mfa: Mfa,
+        opt_list: List,
+        arg_list: List,
+        trace_token: Term,
+    ) -> Self {
+        Self::SpawnRequestTt(SpawnRequestTt {
+            req_id,
+            from_pid,
+            group_leader,
+            mfa,
+            opt_list,
+            arg_list,
+            trace_token,
+        })
+    }
+
+    /// Makes a [`SpawnReply`] message.
+    pub fn spawn_reply(
+        req_id: Reference,
+        to_pid: Pid,
+        flags: FixInteger,
+        result: PidOrAtom,
+    ) -> Self {
+        Self::SpawnReply(SpawnReply {
+            req_id,
+            to_pid,
+            flags,
+            result,
+        })
+    }
+
+    /// Makes a [`SpawnReplyTt`] message.
+    pub fn spawn_reply_tt(
+        req_id: Reference,
+        to_pid: Pid,
+        flags: FixInteger,
+        result: PidOrAtom,
+        trace_token: Term,
+    ) -> Self {
+        Self::SpawnReplyTt(SpawnReplyTt {
+            req_id,
+            to_pid,
+            flags,
+            result,
+            trace_token,
+        })
+    }
+
+    /// Makes a [`UnlinkId`] message.
+    pub fn unlink_id(id: Term, from_pid: Pid, to_pid: Pid) -> Self {
+        Self::UnlinkId(UnlinkId {
+            id,
+            from_pid,
+            to_pid,
+        })
+    }
+
+    /// Makes a [`UnlinkIdAck`] message.
+    pub fn unlink_id_ack(id: Term, from_pid: Pid, to_pid: Pid) -> Self {
+        Self::UnlinkIdAck(UnlinkIdAck {
+            id,
+            from_pid,
+            to_pid,
+        })
+    }
+
+    /// Makes a [`AliasSend`] message.
+    pub fn alias_send(from_pid: Pid, alias: Reference, message: Term) -> Self {
+        Self::AliasSend(AliasSend {
+            from_pid,
+            alias,
+            message,
+        })
+    }
+
+    /// Makes a [`AliasSendTt`] message.
+    pub fn alias_send_tt(
+        from_pid: Pid,
+        alias: Reference,
+        message: Term,
+        trace_token: Term,
+    ) -> Self {
+        Self::AliasSendTt(AliasSendTt {
+            from_pid,
+            alias,
+            message,
+            trace_token,
         })
     }
 
@@ -949,7 +1322,7 @@ impl Message {
         Ok(())
     }
 
-    pub fn read_from<R: Read>(reader: &mut R) -> Result<Self, crate::channel::RecvError> {
+    pub(crate) fn read_from<R: Read>(reader: &mut R) -> Result<Self, crate::channel::RecvError> {
         let mut ctrl_msg = reader.read_tuple()?;
         if ctrl_msg.elements.is_empty() {
             return Err(DecodeError::UnexpectedType {

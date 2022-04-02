@@ -6,6 +6,7 @@ pub use eetf::{
 
 /// [`Pid`] or [`Atom`]
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub enum PidOrAtom {
     Pid(Pid),
     Atom(Atom),
@@ -22,6 +23,7 @@ impl From<PidOrAtom> for Term {
 
 /// { [`Atom`], [`Atom`], [`FixInteger`] }
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub struct Mfa {
     pub module: Atom,
     pub function: Atom,
