@@ -1,4 +1,5 @@
-use eetf::{Atom, DecodeError, FixInteger, Pid, Reference, Term, Tuple};
+use crate::term::{Mfa, PidOrAtom};
+use eetf::{Atom, DecodeError, FixInteger, List, Pid, Reference, Term, Tuple};
 
 pub fn nil() -> Term {
     eetf::List::nil().into()
@@ -132,6 +133,36 @@ impl TryFromTerm for Reference {
 impl TryFromTerm for FixInteger {
     fn try_from_term(term: Term) -> Result<Self, DecodeError> {
         try_from_term(term, "integer")
+    }
+}
+
+impl TryFromTerm for List {
+    fn try_from_term(term: Term) -> Result<Self, DecodeError> {
+        try_from_term(term, "list")
+    }
+}
+
+impl TryFromTerm for PidOrAtom {
+    fn try_from_term(term: Term) -> Result<Self, DecodeError> {
+        term.try_into()
+            .map(Self::Pid)
+            .or_else(|term| term.try_into().map(Self::Atom))
+            .map_err(|value| DecodeError::UnexpectedType {
+                value,
+                expected: "pid or atom".to_owned(),
+            })
+    }
+}
+
+impl TryFromTerm for Mfa {
+    fn try_from_term(term: Term) -> Result<Self, DecodeError> {
+        let mut tuple = try_from_term(term, "tuple")?;
+        check_tuple_len(&tuple, 3)?;
+        Ok(Self {
+            module: TryFromTerm::try_from_term(std::mem::replace(&mut tuple.elements[0], nil()))?,
+            function: TryFromTerm::try_from_term(std::mem::replace(&mut tuple.elements[1], nil()))?,
+            arity: TryFromTerm::try_from_term(std::mem::replace(&mut tuple.elements[2], nil()))?,
+        })
     }
 }
 

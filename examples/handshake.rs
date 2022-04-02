@@ -69,7 +69,7 @@ fn main() -> anyhow::Result<()> {
         );
         let _status = handshake
             .execute_send_name(erl_dist::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
-            .await?; // TODO:
+            .await?;
         let (_, peer_node) = handshake.execute_rest(true).await?;
         println!("Handshake finished: peer={:?}", peer_node);
 

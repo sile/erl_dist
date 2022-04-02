@@ -15,6 +15,7 @@ pub mod epmd;
 pub mod handshake;
 pub mod message;
 pub mod node;
+pub mod term;
 
 mod channel;
 mod eetf_ext;

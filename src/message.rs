@@ -1,12 +1,12 @@
 //! Messages passed between distributed nodes, and channels for those messages.
 //!
-//! Reference: [Protocol between Connected Nodes]
-//! (https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#protocol-between-connected-nodes)
+//! Reference: [Protocol between Connected Nodes](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#protocol-between-connected-nodes)
 //!
 //! Note that distribution headers are not supported in the current version.
 use crate::eetf_ext;
 use crate::io::{ReadTermExt, WriteTermExt};
-use eetf::{Atom, DecodeError, EncodeError, FixInteger, Pid, Reference, Term, Tuple};
+use crate::term::{Atom, FixInteger, List, Mfa, Pid, PidOrAtom, Reference, Term, Tuple};
+use eetf::{DecodeError, EncodeError};
 use std::io::{Read, Write};
 
 pub use crate::channel::{channel, Receiver, RecvError, SendError, Sender};
@@ -493,7 +493,7 @@ impl DistributionMessage for RegSendTt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorP {
     pub from_pid: Pid,
-    pub to_proc: Term, // TODO: pid or atom
+    pub to_proc: PidOrAtom,
     pub reference: Reference,
 }
 
@@ -518,7 +518,7 @@ impl DistributionMessage for MonitorP {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorPExit {
     pub from_pid: Pid,
-    pub to_proc: Term, // TODO: pid or atom
+    pub to_proc: PidOrAtom,
     pub reference: Reference,
     pub reason: Term,
 }
@@ -551,7 +551,7 @@ impl DistributionMessage for MonitorPExit {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PayloadMonitorPExit {
     pub from_pid: Pid,
-    pub to_proc: Term, // TODO: pid or atom
+    pub to_proc: PidOrAtom,
     pub reference: Reference,
     pub reason: Term,
 }
@@ -580,7 +580,7 @@ impl DistributionMessage for PayloadMonitorPExit {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DemonitorP {
     pub from_pid: Pid,
-    pub to_proc: Term, // TODO: pid or atom
+    pub to_proc: PidOrAtom,
     pub reference: Reference,
 }
 
@@ -607,9 +607,9 @@ pub struct SpawnRequest {
     pub req_id: Reference,
     pub from_pid: Pid,
     pub group_leader: Pid,
-    pub mfa: Term,      // TODO: {atom(), atom(), integer()}
-    pub opt_list: Term, // TODO: [term()],
-    pub arg_list: Term, // TODO: [term()]
+    pub mfa: Mfa,
+    pub opt_list: List,
+    pub arg_list: List,
 }
 
 impl DistributionMessage for SpawnRequest {
@@ -631,7 +631,7 @@ impl DistributionMessage for SpawnRequest {
     fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
         let (req_id, from_pid, group_leader, mfa, opt_list) =
             eetf_ext::try_from_tagged_tuple6(ctrl_msg)?;
-        let arg_list = reader.read_term()?;
+        let arg_list = eetf_ext::try_from_term(reader.read_term()?, "list")?;
         Ok(Self {
             req_id,
             from_pid,
@@ -648,10 +648,10 @@ pub struct SpawnRequestTt {
     pub req_id: Reference,
     pub from_pid: Pid,
     pub group_leader: Pid,
-    pub mfa: Term,      // TODO: {atom(), atom(), integer()}
-    pub opt_list: Term, // TODO: [term()],
+    pub mfa: Mfa,
+    pub opt_list: List,
     pub trace_token: Term,
-    pub arg_list: Term, // TODO: [term()]
+    pub arg_list: List,
 }
 
 impl DistributionMessage for SpawnRequestTt {
@@ -674,7 +674,7 @@ impl DistributionMessage for SpawnRequestTt {
     fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
         let (req_id, from_pid, group_leader, mfa, opt_list, trace_token) =
             eetf_ext::try_from_tagged_tuple7(ctrl_msg)?;
-        let arg_list = reader.read_term()?;
+        let arg_list = eetf_ext::try_from_term(reader.read_term()?, "list")?;
         Ok(Self {
             req_id,
             from_pid,
@@ -692,7 +692,7 @@ pub struct SpawnReply {
     pub req_id: Reference,
     pub to_pid: Pid,
     pub flags: FixInteger,
-    pub result: Term, // TODO: pid() or atom()
+    pub result: PidOrAtom,
 }
 
 impl DistributionMessage for SpawnReply {
@@ -719,7 +719,7 @@ pub struct SpawnReplyTt {
     pub req_id: Reference,
     pub to_pid: Pid,
     pub flags: FixInteger,
-    pub result: Term, // TODO: pid() or atom()
+    pub result: PidOrAtom,
     pub trace_token: Term,
 }
 
@@ -804,7 +804,7 @@ impl DistributionMessage for UnlinkIdAck {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AliasSend {
     pub from_pid: Pid,
-    pub alias: Term, // Reference(?)
+    pub alias: Reference,
     pub message: Term,
 }
 
@@ -831,7 +831,7 @@ impl DistributionMessage for AliasSend {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AliasSendTt {
     pub from_pid: Pid,
-    pub alias: Term, // Reference(?)
+    pub alias: Reference,
     pub trace_token: Term,
     pub message: Term,
 }
@@ -897,8 +897,6 @@ pub enum Message {
 }
 
 impl Message {
-    // TODO: pub into_compatible(self, flags) -> Result<Self>;
-
     pub fn send(to_pid: Pid, message: Term) -> Self {
         Self::Send(Send { to_pid, message })
     }
