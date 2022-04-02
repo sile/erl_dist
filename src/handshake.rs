@@ -5,9 +5,9 @@
 //! See
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
-use crate::capability::DistributionFlags;
 use crate::node::{Creation, LocalNode, NodeName, PeerNode};
 use crate::socket::Socket;
+use crate::DistributionFlags;
 use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
 
@@ -19,6 +19,7 @@ pub struct ClientSideHandshake<T> {
     cookie: String,
     socket: Socket<T>,
     send_name_status: Option<HandshakeStatus>,
+    may_need_complement: bool,
 }
 
 impl<T> ClientSideHandshake<T>
@@ -33,6 +34,7 @@ where
             cookie: cookie.to_owned(),
             socket: Socket::new(connection),
             send_name_status: None,
+            may_need_complement: false,
         }
     }
 
@@ -40,8 +42,11 @@ where
     ///
     /// To complete the handshake, you then need to call [`ClientSideHandshake::execute_rest()`] method
     /// taking into account the [`HandshakeStatus`] replied from the peer node.
-    pub async fn execute_send_name(&mut self) -> Result<HandshakeStatus, HandshakeError> {
-        self.send_name().await?;
+    pub async fn execute_send_name(
+        &mut self,
+        protocol_version: u16,
+    ) -> Result<HandshakeStatus, HandshakeError> {
+        self.send_name(protocol_version).await?;
         let status = self.recv_status().await?;
         self.send_name_status = Some(status.clone());
         Ok(status)
@@ -79,7 +84,7 @@ where
         }
 
         let (peer_node, peer_challenge) = self.recv_challenge().await?;
-        if peer_node.creation.is_some() {
+        if self.may_need_complement && peer_node.creation.is_some() {
             self.send_complement().await?;
         }
         self.send_challenge_reply(peer_challenge).await?;
@@ -89,12 +94,27 @@ where
         Ok((connection, peer_node))
     }
 
-    async fn send_name(&mut self) -> Result<(), HandshakeError> {
+    async fn send_name(&mut self, protocol_version: u16) -> Result<(), HandshakeError> {
         let mut writer = self.socket.message_writer();
-        writer.write_u8(b'n')?;
-        writer.write_u16(5)?;
-        writer.write_u32(self.local_node.flags.bits() as u32)?;
-        writer.write_all(self.local_node.name.to_string().as_bytes())?;
+        match protocol_version {
+            5 => {
+                writer.write_u8(b'n')?;
+                writer.write_u16(5)?;
+                writer.write_u32(self.local_node.flags.bits() as u32)?;
+                writer.write_all(self.local_node.name.to_string().as_bytes())?;
+                self.may_need_complement = true;
+            }
+            6 => {
+                writer.write_u8(b'N')?;
+                writer.write_u64(self.local_node.flags.bits())?;
+                writer.write_u32(self.local_node.creation.get())?;
+                writer.write_u16(self.local_node.name.len() as u16)?;
+                writer.write_all(self.local_node.name.to_string().as_bytes())?;
+            }
+            value => {
+                return Err(HandshakeError::UnknownProtocolVersion { value });
+            }
+        }
         writer.finish().await?;
         Ok(())
     }
@@ -296,7 +316,7 @@ where
         reader.finish().await?;
 
         let name = node.name.clone();
-        let is_dynamic = node.flags.contains(DistributionFlags::DFLAG_NAME_ME);
+        let is_dynamic = node.flags.contains(DistributionFlags::NAME_ME);
         self.peer_node = Some(node);
         Ok((name, is_dynamic))
     }
@@ -324,7 +344,7 @@ where
 
         self.send_challenge(peer_flags).await?;
 
-        if peer_flags.contains(DistributionFlags::DFLAG_HANDSHAKE_23) && peer_creation.is_none() {
+        if peer_flags.contains(DistributionFlags::HANDSHAKE_23) && peer_creation.is_none() {
             self.recv_complement().await?;
         }
 
@@ -365,7 +385,7 @@ where
         peer_flags: DistributionFlags,
     ) -> Result<(), HandshakeError> {
         let mut writer = self.socket.message_writer();
-        if peer_flags.contains(DistributionFlags::DFLAG_HANDSHAKE_23) {
+        if peer_flags.contains(DistributionFlags::HANDSHAKE_23) {
             writer.write_u8(b'N')?;
             writer.write_u64(self.local_node.flags.bits())?;
             writer.write_u32(self.local_challenge.0)?;
@@ -503,6 +523,9 @@ pub enum HandshakeError {
     #[error("a connection to the node is already active")]
     AlreadyActive,
 
+    #[error("unknown distribution protocol version {value:?}")]
+    UnknownProtocolVersion { value: u16 },
+
     #[error("received an unknown status {status:?}")]
     UnknownStatus { status: String },
 
@@ -555,7 +578,7 @@ mod tests {
             let mut handshake =
                 ClientSideHandshake::new(connection, local_node, crate::tests::COOKIE);
             let status = handshake
-                .execute_send_name()
+                .execute_send_name(crate::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
                 .await
                 .expect("failed to execute send name");
             assert_eq!(status, HandshakeStatus::Ok);
@@ -584,7 +607,10 @@ mod tests {
                     LocalNode::new("foo@localhost".parse().unwrap(), Creation::random());
                 let mut handshake =
                     ClientSideHandshake::new(connection, local_node, crate::tests::COOKIE);
-                let _status = handshake.execute_send_name().await.unwrap();
+                let _status = handshake
+                    .execute_send_name(crate::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
+                    .await
+                    .unwrap();
                 let (connection, _) = handshake.execute_rest(true).await.unwrap();
                 let _ = tx.send(connection);
             })

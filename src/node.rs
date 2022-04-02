@@ -1,29 +1,21 @@
-use crate::capability::DistributionFlags;
+//! Node related components.
+use crate::DistributionFlags;
 
-#[derive(Debug, thiserror::Error)]
-pub enum NodeNameError {
-    #[error("node name length must be less than 256, but got {size} characters")]
-    TooLongName { size: usize },
-
-    #[error("node name must contain an '@' character")]
-    MissingAtmark,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PeerNode {
-    pub name: NodeName,
-    pub flags: DistributionFlags,
-    pub creation: Option<Creation>,
-}
-
+/// Local node information.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LocalNode {
+    /// Node name.
     pub name: NodeName,
+
+    /// Distribution flags.
     pub flags: DistributionFlags,
+
+    /// Incarnation identifier.
     pub creation: Creation,
 }
 
 impl LocalNode {
+    /// Makes a new [`LocalNode`] instance with the default distribution flags.
     pub fn new(name: NodeName, creation: Creation) -> Self {
         Self {
             name,
@@ -33,6 +25,39 @@ impl LocalNode {
     }
 }
 
+/// Peer node information.
+///
+/// This is similar to [`LocalNode`] but the `creation` field can be `None` as older nodes may not provide that information during the handshake.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PeerNode {
+    /// Node name.
+    pub name: NodeName,
+
+    /// Distribution flags.
+    pub flags: DistributionFlags,
+
+    /// Incarnation identifier.
+    pub creation: Option<Creation>,
+}
+
+/// Errors that can occur while parsing node names.
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum NodeNameError {
+    #[error("node name length must be less than 256, but got {size} characters")]
+    TooLongName { size: usize },
+
+    #[error("the name part of a node name is empty")]
+    EmptyName,
+
+    #[error("the host part of a node name is empty")]
+    EmptyHost,
+
+    #[error("node name must contain an '@' character")]
+    MissingAtmark,
+}
+
+/// Full node name with the format "{NAME}@{HOST}".
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NodeName {
     name: String,
@@ -40,10 +65,15 @@ pub struct NodeName {
 }
 
 impl NodeName {
+    /// Makes a new [`NodeName`] instance.
     pub fn new(name: &str, host: &str) -> Result<Self, NodeNameError> {
         let size = name.len() + 1 + host.len();
         if size > 255 {
             Err(NodeNameError::TooLongName { size })
+        } else if name.is_empty() {
+            Err(NodeNameError::EmptyName)
+        } else if host.is_empty() {
+            Err(NodeNameError::EmptyHost)
         } else {
             Ok(Self {
                 name: name.to_owned(),
@@ -52,20 +82,22 @@ impl NodeName {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn len(&self) -> usize {
-        self.name.len() + 1 + self.host.len()
-    }
-
+    /// Returns the name part.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Returns the host part.
     pub fn host(&self) -> &str {
         &self.host
+    }
+
+    /// Returns the name length.
+    ///
+    /// Note that the result will never be less than `3`.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.name.len() + 1 + self.host.len()
     }
 }
 
@@ -88,29 +120,6 @@ impl std::fmt::Display for NodeName {
     }
 }
 
-/// Type of a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum NodeType {
-    /// Hidden node (C-node).
-    Hidden = 72,
-
-    /// Normal Erlang node.
-    Normal = 77,
-}
-
-impl TryFrom<u8> for NodeType {
-    type Error = crate::epmd::EpmdError; // TODO
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            72 => Ok(Self::Hidden),
-            77 => Ok(Self::Normal),
-            _ => Err(crate::epmd::EpmdError::UnknownNodeType { value }),
-        }
-    }
-}
-
 /// Incarnation identifier of a node.
 ///
 /// [`Creation`] is used by the node to create its pids, ports and references.
@@ -124,6 +133,7 @@ impl Creation {
         Self(n)
     }
 
+    /// Makes a new [`Creation`] instance having a random value.
     pub fn random() -> Self {
         Self(rand::random())
     }

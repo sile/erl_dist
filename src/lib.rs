@@ -8,34 +8,23 @@
 //!
 //! - Client Node Example: [send_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/send_msg.rs)
 //! - Server Node Example: [recv_msg.rs](https://github.com/sile/erl_dist/blob/master/examples/recv_msg.rs)
-pub mod capability;
+
 pub mod epmd;
 pub mod handshake;
 pub mod message;
 pub mod node;
 
 mod channel;
+mod flags;
 mod socket;
 
-// TODO
-/// Protocol for communicating with a distributed node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum TransportProtocol {
-    /// TCP/IPv4.
-    TcpIpV4 = 0,
-}
+pub use self::flags::DistributionFlags;
 
-impl TryFrom<u8> for TransportProtocol {
-    type Error = crate::epmd::EpmdError;
+/// The lowest distribution protocol version this crate can handle.
+pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::TcpIpV4),
-            _ => Err(crate::epmd::EpmdError::UnknownTransportProtocol { value }),
-        }
-    }
-}
+/// The highest distribution protocol version this crate can handle.
+pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
 
 #[cfg(test)]
 mod tests {
