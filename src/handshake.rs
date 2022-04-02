@@ -296,7 +296,7 @@ where
         reader.finish().await?;
 
         let name = node.name.clone();
-        let is_dynamic = node.flags.contains(DistributionFlags::DFLAG_NAME_ME);
+        let is_dynamic = node.flags.contains(DistributionFlags::NAME_ME);
         self.peer_node = Some(node);
         Ok((name, is_dynamic))
     }
@@ -324,7 +324,7 @@ where
 
         self.send_challenge(peer_flags).await?;
 
-        if peer_flags.contains(DistributionFlags::DFLAG_HANDSHAKE_23) && peer_creation.is_none() {
+        if peer_flags.contains(DistributionFlags::HANDSHAKE_23) && peer_creation.is_none() {
             self.recv_complement().await?;
         }
 
@@ -365,7 +365,7 @@ where
         peer_flags: DistributionFlags,
     ) -> Result<(), HandshakeError> {
         let mut writer = self.socket.message_writer();
-        if peer_flags.contains(DistributionFlags::DFLAG_HANDSHAKE_23) {
+        if peer_flags.contains(DistributionFlags::HANDSHAKE_23) {
             writer.write_u8(b'N')?;
             writer.write_u64(self.local_node.flags.bits())?;
             writer.write_u32(self.local_challenge.0)?;

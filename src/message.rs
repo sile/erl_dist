@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 
 pub use crate::channel::{channel, Receiver, Sender};
 
-pub trait ReadTermExt: Read {
+trait ReadTermExt: Read {
     fn read_tuple(&mut self) -> Result<Tuple, DecodeError> {
         let term = self.read_term()?;
         term.try_into()
@@ -26,7 +26,7 @@ pub trait ReadTermExt: Read {
 
 impl<T: Read> ReadTermExt for T {}
 
-pub trait WriteTermExt: Write {
+trait WriteTermExt: Write {
     fn write_tagged_tuple1(&mut self, tag: i32) -> Result<(), EncodeError> {
         let tuple = Tuple {
             elements: vec![Term::from(FixInteger { value: tag as i32 })],
@@ -175,7 +175,7 @@ pub trait WriteTermExt: Write {
 
 impl<T: Write> WriteTermExt for T {}
 
-pub trait TupleExt {
+trait TupleExt {
     fn check_len(&self, n: usize) -> Result<(), DecodeError>;
     // TODO: convert(?)
     fn take_as<T>(&mut self, i: usize, expected: &str) -> Result<T, DecodeError>
