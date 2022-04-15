@@ -68,3 +68,8 @@ Example commands:
 - EPMD Client Example: [epmd_cli.rs](examples/epmd_cli.rs)
 - Client Node Example: [send_msg.rs](examples/send_msg.rs)
 - Server Node Example: [recv_msg.rs](examples/recv_msg.rs)
+
+Related Crates
+--------------
+
+- [erl_rpc](https://github.com/sile/erl_rpc): Erlang RPC client for Rust
