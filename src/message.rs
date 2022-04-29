@@ -410,8 +410,8 @@ impl DistributionMessage for DemonitorP {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(missing_docs)]
 pub struct MonitorPExit {
-    pub from_pid: Pid,
-    pub to_proc: PidOrAtom,
+    pub from_proc: PidOrAtom,
+    pub to_pid: Pid,
     pub reference: Reference,
     pub reason: Term,
 }
@@ -422,8 +422,8 @@ impl DistributionMessage for MonitorPExit {
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
         writer.write_tagged_tuple5(
             Self::OP,
-            self.from_pid,
-            self.to_proc,
+            self.from_proc,
+            self.to_pid,
             self.reference,
             self.reason,
         )?;
@@ -431,10 +431,10 @@ impl DistributionMessage for MonitorPExit {
     }
 
     fn read_from<R: Read>(_reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_proc, reference, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
+        let (from_proc, to_pid, reference, reason) = eetf_ext::try_from_tagged_tuple5(ctrl_msg)?;
         Ok(Self {
-            from_pid,
-            to_proc,
+            from_proc,
+            to_pid,
             reference,
             reason,
         })
@@ -625,8 +625,8 @@ impl DistributionMessage for PayloadExit2Tt {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(missing_docs)]
 pub struct PayloadMonitorPExit {
-    pub from_pid: Pid,
-    pub to_proc: PidOrAtom,
+    pub from_proc: PidOrAtom,
+    pub to_pid: Pid,
     pub reference: Reference,
     pub reason: Term,
 }
@@ -635,17 +635,17 @@ impl DistributionMessage for PayloadMonitorPExit {
     const OP: i32 = 28;
 
     fn write_into<W: Write>(self, writer: &mut W) -> Result<(), EncodeError> {
-        writer.write_tagged_tuple4(Self::OP, self.from_pid, self.to_proc, self.reference)?;
+        writer.write_tagged_tuple4(Self::OP, self.from_proc, self.to_pid, self.reference)?;
         writer.write_term(self.reason)?;
         Ok(())
     }
 
     fn read_from<R: Read>(reader: &mut R, ctrl_msg: Tuple) -> Result<Self, DecodeError> {
-        let (from_pid, to_proc, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
+        let (from_proc, to_pid, reference) = eetf_ext::try_from_tagged_tuple4(ctrl_msg)?;
         let reason = reader.read_term()?;
         Ok(Self {
-            from_pid,
-            to_proc,
+            from_proc,
+            to_pid,
             reference,
             reason,
         })
@@ -1083,14 +1083,14 @@ impl Message {
 
     /// Makes as [`MonitorPExit`] message.
     pub fn monitor_p_exit(
-        from_pid: Pid,
-        to_proc: PidOrAtom,
+        from_proc: PidOrAtom,
+        to_pid: Pid,
         reference: Reference,
         reason: Term,
     ) -> Self {
         Self::MonitorPExit(MonitorPExit {
-            from_pid,
-            to_proc,
+            from_proc,
+            to_pid,
             reference,
             reason,
         })
@@ -1155,14 +1155,14 @@ impl Message {
 
     /// Makes a [`PayloadMonitorPExit`] message.
     pub fn payload_monitor_p_exit(
-        from_pid: Pid,
-        to_proc: PidOrAtom,
+        from_proc: PidOrAtom,
+        to_pid: Pid,
         reference: Reference,
         reason: Term,
     ) -> Self {
         Self::PayloadMonitorPExit(PayloadMonitorPExit {
-            from_pid,
-            to_proc,
+            from_proc,
+            to_pid,
             reference,
             reason,
         })
