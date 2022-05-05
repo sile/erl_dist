@@ -73,3 +73,4 @@ Related Crates
 --------------
 
 - [erl_rpc](https://github.com/sile/erl_rpc): Erlang RPC client for Rust
+- [erldash](https://github.com/sile/erldash): Terminal-based Erlang dashboard
