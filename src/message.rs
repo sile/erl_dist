@@ -1282,10 +1282,8 @@ impl Message {
         })
     }
 
-    pub(crate) fn write_into<W: Write>(
-        self,
-        writer: &mut W,
-    ) -> Result<(), crate::channel::SendError> {
+    /// Serialize the [Message] into a byte buffer
+    pub fn write_into<W: Write>(self, writer: &mut W) -> Result<(), crate::channel::SendError> {
         match self {
             Self::Link(x) => x.write_into(writer)?,
             Self::Send(x) => x.write_into(writer)?,
@@ -1322,7 +1320,9 @@ impl Message {
         Ok(())
     }
 
-    pub(crate) fn read_from<R: Read>(reader: &mut R) -> Result<Self, crate::channel::RecvError> {
+    /// Deserialize a given byte buffer into a [Message]. Returns [Err(_)] if the message
+    /// is malformed
+    pub fn read_from<R: Read>(reader: &mut R) -> Result<Self, crate::channel::RecvError> {
         let mut ctrl_msg = reader.read_tuple()?;
         if ctrl_msg.elements.is_empty() {
             return Err(DecodeError::UnexpectedType {
