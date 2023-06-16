@@ -144,7 +144,7 @@ impl DistributionFlags {
     ///
     /// ```
     /// # use erl_dist::DistributionFlags;
-    /// DistributionFlags::mandatory()
+    /// DistributionFlags::mandatory();
     /// ```
     pub fn new() -> Self {
         Self::mandatory()
