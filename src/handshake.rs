@@ -97,13 +97,6 @@ where
     async fn send_name(&mut self, protocol_version: u16) -> Result<(), HandshakeError> {
         let mut writer = self.connection.handshake_message_writer();
         match protocol_version {
-            5 => {
-                writer.write_u8(b'n')?;
-                writer.write_u16(5)?;
-                writer.write_u32(self.local_node.flags.bits() as u32)?;
-                writer.write_all(self.local_node.name.to_string().as_bytes())?;
-                self.may_need_complement = true;
-            }
             6 => {
                 writer.write_u8(b'N')?;
                 writer.write_u64(self.local_node.flags.bits())?;
