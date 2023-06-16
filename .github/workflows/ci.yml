@@ -34,7 +34,7 @@ jobs:
     strategy:
       matrix:
         otp: ['24.0', '25.0', '26.0']
-        toolchain: [stable, beta]
+        toolchain: [stable]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
