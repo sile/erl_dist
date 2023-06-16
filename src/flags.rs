@@ -144,7 +144,7 @@ impl DistributionFlags {
     ///
     /// ```
     /// # use erl_dist::DistributionFlags;
-    /// DistributionFlags::mandatory() | DistributionFlags::HANDSHAKE_23;
+    /// DistributionFlags::mandatory()
     /// ```
     pub fn new() -> Self {
         Self::mandatory()
