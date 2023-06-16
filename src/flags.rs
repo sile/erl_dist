@@ -144,7 +144,7 @@ impl DistributionFlags {
         Self::mandatory() | Self::HANDSHAKE_23
     }
 
-    /// Gets the mandatory flags (in OTP 25).
+    /// Gets the mandatory flags (in OTP 26).
     pub fn mandatory() -> Self {
         Self::EXTENDED_REFERENCES
             | Self::FUN_TAGS
@@ -156,5 +156,7 @@ impl DistributionFlags {
             | Self::UTF8_ATOMS
             | Self::MAP_TAGS
             | Self::BIG_CREATION
+            | Self::UNLINK_ID
+            | Self::V4_NC
     }
 }
