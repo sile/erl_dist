@@ -272,7 +272,7 @@ impl<T: Read> ReadTermExt for T {}
 pub trait WriteTermExt: Write {
     fn write_tagged_tuple1(&mut self, tag: i32) -> Result<(), EncodeError> {
         let tuple = Tuple {
-            elements: vec![Term::from(FixInteger { value: tag as i32 })],
+            elements: vec![Term::from(FixInteger { value: tag })],
         };
         self.write_term(tuple)
     }
@@ -289,7 +289,7 @@ pub trait WriteTermExt: Write {
     {
         let tuple = Tuple {
             elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(FixInteger { value: tag }),
                 Term::from(term0),
                 Term::from(term1),
             ],
@@ -311,7 +311,7 @@ pub trait WriteTermExt: Write {
     {
         let tuple = Tuple {
             elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(FixInteger { value: tag }),
                 Term::from(term0),
                 Term::from(term1),
                 Term::from(term2),
@@ -336,7 +336,7 @@ pub trait WriteTermExt: Write {
     {
         let tuple = Tuple {
             elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(FixInteger { value: tag }),
                 Term::from(term0),
                 Term::from(term1),
                 Term::from(term2),
@@ -364,7 +364,7 @@ pub trait WriteTermExt: Write {
     {
         let tuple = Tuple {
             elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(FixInteger { value: tag }),
                 Term::from(term0),
                 Term::from(term1),
                 Term::from(term2),
@@ -396,7 +396,7 @@ pub trait WriteTermExt: Write {
     {
         let tuple = Tuple {
             elements: vec![
-                Term::from(FixInteger { value: tag as i32 }),
+                Term::from(FixInteger { value: tag }),
                 Term::from(term0),
                 Term::from(term1),
                 Term::from(term2),

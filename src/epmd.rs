@@ -152,12 +152,8 @@ where
         self.connection.write_u16(node.port).await?;
         self.connection.write_u8(node.node_type.into()).await?;
         self.connection.write_u8(node.protocol.into()).await?;
-        self.connection
-            .write_u16(node.highest_version as u16)
-            .await?;
-        self.connection
-            .write_u16(node.lowest_version as u16)
-            .await?;
+        self.connection.write_u16(node.highest_version).await?;
+        self.connection.write_u16(node.lowest_version).await?;
         self.connection.write_u16(node.name.len() as u16).await?;
         self.connection.write_all(node.name.as_bytes()).await?;
         self.connection.write_u16(node.extra.len() as u16).await?;

@@ -532,7 +532,7 @@ impl Challenge {
     }
 
     fn digest(self, cookie: &str) -> Digest {
-        Digest(md5::compute(&format!("{}{}", cookie, self.0)).0)
+        Digest(md5::compute(format!("{}{}", cookie, self.0)).0)
     }
 }
 

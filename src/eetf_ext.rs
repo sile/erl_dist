@@ -7,10 +7,10 @@ pub fn nil() -> Term {
 
 pub fn check_tuple_len(tuple: &Tuple, n: usize) -> Result<(), DecodeError> {
     if tuple.elements.len() != n {
-        return Err(DecodeError::UnexpectedType {
+        Err(DecodeError::UnexpectedType {
             value: tuple.clone().into(),
             expected: format!("{} elements tuple", n),
-        });
+        })
     } else {
         Ok(())
     }
