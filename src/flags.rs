@@ -122,6 +122,12 @@ bitflags::bitflags! {
         ///
         /// Introduced in OTP 24.
         const ALIAS = 1 << 35;
+
+        /// The node supports all capabilities that are mandatory in OTP 25.
+        ///
+        /// Introduced in OTP 25.
+        /// [NOTE] This flag will become mandatory in OTP 27.
+        const MANDATORY_25_DIGEST = 1 << 36;
     }
 }
 
@@ -141,7 +147,7 @@ impl DistributionFlags {
     /// DistributionFlags::mandatory() | DistributionFlags::HANDSHAKE_23;
     /// ```
     pub fn new() -> Self {
-        Self::mandatory() | Self::HANDSHAKE_23
+        Self::mandatory()
     }
 
     /// Gets the mandatory flags (in OTP 26).
@@ -156,6 +162,8 @@ impl DistributionFlags {
             | Self::UTF8_ATOMS
             | Self::MAP_TAGS
             | Self::BIG_CREATION
+            | Self::HANDSHAKE_23
+            | Self::MANDATORY_25_DIGEST
             | Self::UNLINK_ID
             | Self::V4_NC
     }
