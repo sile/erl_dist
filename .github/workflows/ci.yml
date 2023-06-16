@@ -33,11 +33,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: [stable, beta, nightly]
+        otp: ['24.0', '25.0', '26.0']
+        toolchain: [stable]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
       - name: Install ${{ matrix.toolchain }} toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -86,7 +89,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '26.0'
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:

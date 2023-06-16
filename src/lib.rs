@@ -87,7 +87,7 @@ mod io;
 pub use self::flags::DistributionFlags;
 
 /// The lowest distribution protocol version this crate can handle.
-pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 5;
+pub const LOWEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
 
 /// The highest distribution protocol version this crate can handle.
 pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
