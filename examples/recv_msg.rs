@@ -24,6 +24,10 @@ struct Args {
 
     #[clap(long, default_value = "WPKYDIOSJIMJUURLRUHV")]
     cookie: String,
+
+    /// Add `PUBLISHED` distribution flag to the node (otherwise, the node runs as a hidden node).
+    #[clap(long)]
+    published: bool,
 }
 
 impl Args {
@@ -43,8 +47,11 @@ fn main() -> anyhow::Result<()> {
         let listening_port = listener.local_addr()?.port();
         println!("Listening port: {}", listening_port);
 
-        let local_node_entry =
-            erl_dist::epmd::NodeEntry::new_hidden(args.local_node.name(), listening_port);
+        let local_node_entry = if args.published {
+            erl_dist::epmd::NodeEntry::new(args.local_node.name(), listening_port)
+        } else {
+            erl_dist::epmd::NodeEntry::new_hidden(args.local_node.name(), listening_port)
+        };
 
         let (keepalive_connection, creation) = args
             .local_epmd_client()
@@ -56,7 +63,10 @@ fn main() -> anyhow::Result<()> {
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
             let stream = stream?;
-            let local_node = erl_dist::node::LocalNode::new(args.local_node.clone(), creation);
+            let mut local_node = erl_dist::node::LocalNode::new(args.local_node.clone(), creation);
+            if args.published {
+                local_node.flags |= erl_dist::DistributionFlags::PUBLISHED;
+            }
             let cookie = args.cookie.clone();
             smol::spawn(async move {
                 match handle_client(local_node, cookie, stream).await {
