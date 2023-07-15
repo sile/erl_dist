@@ -7,7 +7,7 @@
 //!
 //! ```bash
 //! $ cargo run --example recv_msg -- --help
-//! $ cargo run --example recv_msg -- --name bar --cookie erlang_cookie
+//! $ cargo run --example recv_msg -- --local bar@localhost --cookie erlang_cookie
 //!
 //! # On another shell
 //! $ erl -sname foo
