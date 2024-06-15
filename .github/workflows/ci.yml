@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        otp: ['24.0', '25.0', '26.0']
+        otp: ['25.0', '26.0', '27.0']
         toolchain: [stable]
     steps:
       - name: Checkout sources
