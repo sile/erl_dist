@@ -9,6 +9,7 @@
 //! ```
 use clap::{Parser, Subcommand};
 use erl_dist::epmd::{EpmdClient, NodeEntry};
+use orfail::OrFail;
 
 #[derive(Debug, Parser)]
 #[clap(name = "epmd_cli")]
@@ -42,51 +43,50 @@ enum Command {
     },
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> orfail::Result<()> {
     let args = Args::parse();
 
     smol::block_on(async {
         let stream =
-            smol::net::TcpStream::connect(format!("{}:{}", args.epmd_host, args.epmd_port)).await?;
+            smol::net::TcpStream::connect(format!("{}:{}", args.epmd_host, args.epmd_port))
+                .await
+                .or_fail()?;
         let client = EpmdClient::new(stream);
 
         match args.command {
             Command::Names => {
                 // 'NAMES_REQ'
-                let names = client.get_names().await?;
+                let names = client.get_names().await.or_fail()?;
                 let result = serde_json::json!(names
                     .into_iter()
                     .map(|(name, port)| serde_json::json!({"name": name, "port": port}))
                     .collect::<Vec<_>>());
-                println!("{}", serde_json::to_string_pretty(&result)?);
+                println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
             }
             Command::NodeEntry { node } => {
                 // 'PORT_PLEASE2_REQ'
-                if let Some(node) = client.get_node(&node).await? {
-                    let result = serde_json::json!({
-                        "name": node.name,
-                        "port": node.port,
-                        "node_type": format!("{:?} ({})", node.node_type, u8::from(node.node_type)),
-                         "protocol": format!("{:?} ({})", node.protocol, u8::from(node.protocol)),
-                        "highest_version": node.highest_version,
-                         "lowest_version": node.lowest_version,
-                         "extra": node.extra
-                    });
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                } else {
-                    anyhow::bail!("No such node: {:?}", node);
-                }
+                let node = client.get_node(&node).await.or_fail()?.or_fail()?;
+                let result = serde_json::json!({
+                    "name": node.name,
+                    "port": node.port,
+                    "node_type": format!("{:?} ({})", node.node_type, u8::from(node.node_type)),
+                     "protocol": format!("{:?} ({})", node.protocol, u8::from(node.protocol)),
+                    "highest_version": node.highest_version,
+                     "lowest_version": node.lowest_version,
+                     "extra": node.extra
+                });
+                println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
             }
             Command::Dump => {
                 // 'DUMP_REQ'
-                let result = client.dump().await?;
+                let result = client.dump().await.or_fail()?;
                 println!("{}", result);
             }
             Command::Kill => {
                 // 'KILL_REQ'
-                let result = client.kill().await?;
+                let result = client.kill().await.or_fail()?;
                 let result = serde_json::json!({ "result": result });
-                println!("{}", serde_json::to_string_pretty(&result)?);
+                println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
             }
             Command::Register { name, port, hidden } => {
                 // 'ALIVE2_REQ'
@@ -95,11 +95,11 @@ fn main() -> anyhow::Result<()> {
                 } else {
                     NodeEntry::new(&name, port)
                 };
-                let (_, creation) = client.register(node).await?;
+                let (_, creation) = client.register(node).await.or_fail()?;
                 let result = serde_json::json!({
                     "creation": creation.get()
                 });
-                println!("{}", serde_json::to_string_pretty(&result)?);
+                println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
             }
         }
         Ok(())

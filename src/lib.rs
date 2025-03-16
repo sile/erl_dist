@@ -11,7 +11,7 @@
 //! # use smol::net::TcpStream;
 //! use erl_dist::epmd::{DEFAULT_EPMD_PORT, EpmdClient};
 //!
-//! # fn main() -> anyhow::Result<()> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # smol::block_on(async {
 //! // Connect to the local EPMD.
 //! let connection = TcpStream::connect(("localhost", DEFAULT_EPMD_PORT)).await?;
@@ -38,7 +38,7 @@
 //! use erl_dist::term::{Atom, Pid};
 //! use erl_dist::message::{channel, Message};
 //!
-//! # fn main() -> anyhow::Result<()> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # smol::block_on(async {
 //! // Connect to a peer node.
 //! let peer_host = "localhost";
@@ -96,6 +96,8 @@ pub const HIGHEST_DISTRIBUTION_PROTOCOL_VERSION: u16 = 6;
 mod tests {
     use std::process::{Child, Command};
 
+    use orfail::OrFail;
+
     pub const COOKIE: &str = "test-cookie";
 
     #[derive(Debug)]
@@ -104,14 +106,15 @@ mod tests {
     }
 
     impl TestErlangNode {
-        pub async fn new(name: &str) -> anyhow::Result<Self> {
+        pub async fn new(name: &str) -> orfail::Result<Self> {
             let child = Command::new("erl")
                 .args(&["-sname", name, "-noshell", "-setcookie", COOKIE])
-                .spawn()?;
+                .spawn()
+                .or_fail()?;
             let start = std::time::Instant::now();
             loop {
                 if let Ok(client) = try_epmd_client().await {
-                    if client.get_node(name).await?.is_some() {
+                    if client.get_node(name).await.or_fail()?.is_some() {
                         break;
                     }
                 }
@@ -130,11 +133,12 @@ mod tests {
         }
     }
 
-    pub async fn try_epmd_client() -> anyhow::Result<crate::epmd::EpmdClient<smol::net::TcpStream>>
+    pub async fn try_epmd_client() -> orfail::Result<crate::epmd::EpmdClient<smol::net::TcpStream>>
     {
         let client = smol::net::TcpStream::connect(("127.0.0.1", crate::epmd::DEFAULT_EPMD_PORT))
             .await
-            .map(crate::epmd::EpmdClient::new)?;
+            .map(crate::epmd::EpmdClient::new)
+            .or_fail()?;
         Ok(client)
     }
 
