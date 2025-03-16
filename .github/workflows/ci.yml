@@ -1,5 +1,3 @@
-# Based on https://github.com/actions-rs/meta/blob/master/recipes/quickstart.md
-
 name: CI
 
 on: [push]
@@ -13,20 +11,9 @@ jobs:
         toolchain: [stable, beta, nightly]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install ${{ matrix.toolchain }} toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.toolchain }}
-          override: true
-
-      - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all
+        uses: actions/checkout@v4
+      - run: rustup update ${{ matrix.toolchain }}
+      - run: cargo check --all
 
   test:
     name: Test Suite
@@ -37,22 +24,12 @@ jobs:
         toolchain: [stable]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{matrix.otp}}
-      - name: Install ${{ matrix.toolchain }} toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.toolchain }}
-          override: true
-
-      - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all
+      - run: rustup update ${{ matrix.toolchain }}
+      - run: cargo test --all
 
   lints:
     name: Lints
@@ -62,69 +39,8 @@ jobs:
         toolchain: [stable, beta, nightly]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+      - run: rustup update ${{ matrix.toolchain }}
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all -- -D warnings
 
-      - name: Install ${{ matrix.toolchain }} toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.toolchain }}
-          override: true
-          components: rustfmt, clippy
-
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-      - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all -- -D warnings
-
-  grcov:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: '26.0'
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-
-      - name: Execute tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
-          RUSTDOCFLAGS: "-Cpanic=abort"
-
-      - name: Gather coverage data
-        id: coverage
-        uses: actions-rs/grcov@v0.1
-
-      - name: Coveralls upload
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          parallel: true
-          path-to-lcov: ${{ steps.coverage.outputs.report }}
-
-  grcov_finalize:
-    runs-on: ubuntu-latest
-    needs: grcov
-    steps:
-      - name: Coveralls finalization
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          parallel-finished: true

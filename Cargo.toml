@@ -10,9 +10,6 @@ keywords = ["erlang"]
 license = "MIT"
 edition = "2021"
 
-[badges]
-coveralls = {repository = "sile/erl_dist"}
-
 [dependencies]
 bitflags = "2"
 byteorder = "1"
