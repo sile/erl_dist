@@ -15,6 +15,7 @@
 //! ```
 use clap::Parser;
 use futures::stream::StreamExt;
+use orfail::OrFail;
 
 #[derive(Debug, Parser)]
 #[clap(name = "recv_msg")]
@@ -33,18 +34,18 @@ struct Args {
 impl Args {
     async fn local_epmd_client(
         &self,
-    ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
+    ) -> orfail::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
         let addr = (self.local_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
-        let stream = smol::net::TcpStream::connect(addr).await?;
+        let stream = smol::net::TcpStream::connect(addr).await.or_fail()?;
         Ok(erl_dist::epmd::EpmdClient::new(stream))
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> orfail::Result<()> {
     let args = Args::parse();
     smol::block_on(async {
-        let listener = smol::net::TcpListener::bind("0.0.0.0:0").await?;
-        let listening_port = listener.local_addr()?.port();
+        let listener = smol::net::TcpListener::bind("0.0.0.0:0").await.or_fail()?;
+        let listening_port = listener.local_addr().or_fail()?.port();
         println!("Listening port: {}", listening_port);
 
         let local_node_entry = if args.published {
@@ -57,12 +58,12 @@ fn main() -> anyhow::Result<()> {
             .local_epmd_client()
             .await?
             .register(local_node_entry)
-            .await?;
+            .await
+            .or_fail()?;
         println!("Registered self node: creation={:?}", creation);
 
         let mut incoming = listener.incoming();
-        while let Some(stream) = incoming.next().await {
-            let stream = stream?;
+        while let Some(stream) = incoming.next().await.transpose().or_fail()? {
             let mut local_node = erl_dist::node::LocalNode::new(args.local_node.clone(), creation);
             if args.published {
                 local_node.flags |= erl_dist::DistributionFlags::PUBLISHED;
@@ -90,10 +91,10 @@ async fn handle_client(
     local_node: erl_dist::node::LocalNode,
     cookie: String,
     stream: smol::net::TcpStream,
-) -> anyhow::Result<()> {
+) -> orfail::Result<()> {
     let mut handshake =
         erl_dist::handshake::ServerSideHandshake::new(stream, local_node.clone(), &cookie);
-    let status = if handshake.execute_recv_name().await?.is_some() {
+    let status = if handshake.execute_recv_name().await.or_fail()?.is_some() {
         erl_dist::handshake::HandshakeStatus::Ok
     } else {
         // Dynamic name.
@@ -102,7 +103,7 @@ async fn handle_client(
             creation: erl_dist::node::Creation::random(),
         }
     };
-    let (stream, peer_node) = handshake.execute_rest(status).await?;
+    let (stream, peer_node) = handshake.execute_rest(status).await.or_fail()?;
     println!("Connected: {:?}", peer_node);
 
     let (mut tx, rx) = erl_dist::message::channel(stream, local_node.flags & peer_node.flags);
@@ -116,7 +117,7 @@ async fn handle_client(
         .await;
         match result {
             futures::future::Either::Left((result, _)) => {
-                let (msg, rx) = result?;
+                let (msg, rx) = result.or_fail()?;
                 println!("Recv: {:?}", msg);
                 msg_future = Box::pin(rx.recv_owned());
             }
@@ -126,7 +127,7 @@ async fn handle_client(
         }
 
         if smol::future::poll_once(&mut timer).await.is_some() {
-            tx.send(erl_dist::message::Message::Tick).await?;
+            tx.send(erl_dist::message::Message::Tick).await.or_fail()?;
             timer.set_after(std::time::Duration::from_secs(30));
         }
     }

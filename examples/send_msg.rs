@@ -9,6 +9,7 @@
 //! $ cargo run --example send_msg -- --peer foo --destination foo --cookie erlang_cookie -m hello
 //! ```
 use clap::Parser;
+use orfail::OrFail;
 
 #[derive(Debug, Parser)]
 #[clap(name = "send_msg")]
@@ -32,33 +33,37 @@ struct Args {
 impl Args {
     async fn peer_epmd_client(
         &self,
-    ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
+    ) -> orfail::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
         let addr = (self.peer_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
-        let stream = smol::net::TcpStream::connect(addr).await?;
+        let stream = smol::net::TcpStream::connect(addr).await.or_fail()?;
         Ok(erl_dist::epmd::EpmdClient::new(stream))
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> orfail::Result<()> {
     let args = Args::parse();
     smol::block_on(async {
         let peer_node = args
             .peer_epmd_client()
             .await?
             .get_node(&args.peer_node.name())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("no such node: {}", args.peer_node))?;
+            .await
+            .or_fail()?
+            .or_fail()?;
         println!("Got peer node info: {:?}", peer_node);
 
         let creation = erl_dist::node::Creation::random();
-        let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
+        let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port))
+            .await
+            .or_fail()?;
         let local_node = erl_dist::node::LocalNode::new(args.local_node.clone(), creation);
         let mut handshake =
             erl_dist::handshake::ClientSideHandshake::new(stream, local_node.clone(), &args.cookie);
         let _status = handshake
             .execute_send_name(erl_dist::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
-            .await?;
-        let (connection, peer_node) = handshake.execute_rest(true).await?;
+            .await
+            .or_fail()?;
+        let (connection, peer_node) = handshake.execute_rest(true).await.or_fail()?;
         println!("Handshake finished: peer={:?}", peer_node);
 
         let (mut tx, _) =
@@ -69,7 +74,7 @@ fn main() -> anyhow::Result<()> {
             eetf::Atom::from(args.destination),
             eetf::Atom::from(args.message).into(),
         );
-        tx.send(msg).await?;
+        tx.send(msg).await.or_fail()?;
 
         Ok(())
     })

@@ -7,6 +7,7 @@
 //! $ cargo run --example handshake -- --peer foo --self bar@localhost --cookie erlang_cookie
 //! ```
 use clap::Parser;
+use orfail::OrFail;
 
 #[derive(Debug, Parser)]
 #[clap(name = "handshake")]
@@ -24,30 +25,31 @@ struct Args {
 impl Args {
     async fn peer_epmd_client(
         &self,
-    ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
+    ) -> orfail::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
         let addr = (self.peer_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
-        let stream = smol::net::TcpStream::connect(addr).await?;
+        let stream = smol::net::TcpStream::connect(addr).await.or_fail()?;
         Ok(erl_dist::epmd::EpmdClient::new(stream))
     }
 
     async fn local_epmd_client(
         &self,
-    ) -> anyhow::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
+    ) -> orfail::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
         let addr = (self.local_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
-        let stream = smol::net::TcpStream::connect(addr).await?;
+        let stream = smol::net::TcpStream::connect(addr).await.or_fail()?;
         Ok(erl_dist::epmd::EpmdClient::new(stream))
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> orfail::Result<()> {
     let args = Args::parse();
     smol::block_on(async {
         let peer_node = args
             .peer_epmd_client()
             .await?
             .get_node(&args.peer_node.name())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("no such node: {}", args.peer_node))?;
+            .await
+            .or_fail()?
+            .or_fail()?;
         println!("Got peer node info: {:?}", peer_node);
 
         let dummy_listening_port = 3333;
@@ -58,10 +60,13 @@ fn main() -> anyhow::Result<()> {
             .local_epmd_client()
             .await?
             .register(local_node.clone())
-            .await?;
+            .await
+            .or_fail()?;
         println!("Registered self node: creation={:?}", creation);
 
-        let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port)).await?;
+        let stream = smol::net::TcpStream::connect((args.peer_node.host(), peer_node.port))
+            .await
+            .or_fail()?;
         let mut handshake = erl_dist::handshake::ClientSideHandshake::new(
             stream,
             erl_dist::node::LocalNode::new(args.local_node.clone(), creation),
@@ -69,8 +74,9 @@ fn main() -> anyhow::Result<()> {
         );
         let _status = handshake
             .execute_send_name(erl_dist::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
-            .await?;
-        let (_, peer_node) = handshake.execute_rest(true).await?;
+            .await
+            .or_fail()?;
+        let (_, peer_node) = handshake.execute_rest(true).await.or_fail()?;
         println!("Handshake finished: peer={:?}", peer_node);
 
         std::mem::drop(keepalive_connection);
