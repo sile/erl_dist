@@ -41,22 +41,40 @@ pub struct PeerNode {
 }
 
 /// Errors that can occur while parsing node names.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 #[non_exhaustive]
 #[allow(missing_docs)]
 pub enum NodeNameError {
-    #[error("node name length must be less than 256, but got {size} characters")]
+    /// Node name length must be less than 256.
     TooLongName { size: usize },
 
-    #[error("the name part of a node name is empty")]
+    /// Name part of a node name is empty.
     EmptyName,
 
-    #[error("the host part of a node name is empty")]
+    /// Host part of a node name is empty.
     EmptyHost,
 
-    #[error("node name must contain an '@' character")]
+    /// Node name must contain an '@' character.
     MissingAtmark,
 }
+
+impl std::fmt::Display for NodeNameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooLongName { size } => {
+                write!(
+                    f,
+                    "node name length must be less than 256, but got {size} characters"
+                )
+            }
+            Self::EmptyName => write!(f, "the name part of a node name is empty"),
+            Self::EmptyHost => write!(f, "the host part of a node name is empty"),
+            Self::MissingAtmark => write!(f, "node name must contain an '@' character"),
+        }
+    }
+}
+
+impl std::error::Error for NodeNameError {}
 
 /// Full node name with the format "{NAME}@{HOST}".
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
