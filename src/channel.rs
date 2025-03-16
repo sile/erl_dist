@@ -107,34 +107,100 @@ where
 }
 
 /// Possible errors during sending messages.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 #[non_exhaustive]
 #[allow(missing_docs)]
 pub enum SendError {
-    #[error(transparent)]
-    Encode(#[from] eetf::EncodeError),
+    /// Encode error.
+    Encode(eetf::EncodeError),
 
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    /// I/O error.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for SendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encode(error) => write!(f, "{error}"),
+            Self::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for SendError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Encode(error) => Some(error),
+            Self::Io(error) => Some(error),
+        }
+    }
+}
+
+impl From<std::io::Error> for SendError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<eetf::EncodeError> for SendError {
+    fn from(value: eetf::EncodeError) -> Self {
+        Self::Encode(value)
+    }
 }
 
 /// Possible errors during receiving messages.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 #[non_exhaustive]
 #[allow(missing_docs)]
 pub enum RecvError {
-    #[error("connection was closed by the peer")]
+    /// Connection was closed by the peer.
     Closed,
 
-    #[error("unsupported distributed operation {op}")]
+    /// Unsupported distributed operation.
     UnsupportedOp { op: i32 },
 
-    #[error("expected type tag {TYPE_TAG} but got {tag}")]
+    /// Unexpected type tag.
     UnexpectedTypeTag { tag: u8 },
 
-    #[error(transparent)]
-    Decode(#[from] eetf::DecodeError),
+    /// Decode error.
+    Decode(eetf::DecodeError),
 
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    /// I/O error.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Closed => write!(f, "connection was closed by the peer"),
+            Self::UnsupportedOp { op } => write!(f, "unsupported distributed operation {op}"),
+            Self::UnexpectedTypeTag { tag } => {
+                write!(f, "expected type tag {TYPE_TAG} but got {tag}")
+            }
+            Self::Decode(error) => write!(f, "{error}"),
+            Self::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for RecvError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Decode(e) => Some(e),
+            Self::Io(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for RecvError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<eetf::DecodeError> for RecvError {
+    fn from(value: eetf::DecodeError) -> Self {
+        Self::Decode(value)
+    }
 }

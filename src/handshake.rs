@@ -6,10 +6,13 @@
 //! [Distribution Handshake (Erlang Official Doc)](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#distribution-handshake)
 //! for more details.
 use crate::io::Connection;
-use crate::node::{Creation, LocalNode, NodeName, PeerNode};
-use crate::DistributionFlags;
+use crate::node::{Creation, LocalNode, NodeName, NodeNameError, PeerNode};
+use crate::{DistributionFlags, LOWEST_DISTRIBUTION_PROTOCOL_VERSION};
 use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
+
+const PROTOCOL_VERSION: u16 = LOWEST_DISTRIBUTION_PROTOCOL_VERSION;
+const NODE_NAME_VERSION: u16 = 5;
 
 /// Client-side handshake.
 #[derive(Debug)]
@@ -97,7 +100,7 @@ where
     async fn send_name(&mut self, protocol_version: u16) -> Result<(), HandshakeError> {
         let mut writer = self.connection.handshake_message_writer();
         match protocol_version {
-            6 => {
+            PROTOCOL_VERSION => {
                 writer.write_u8(b'N')?;
                 writer.write_u64(self.local_node.flags.bits())?;
                 writer.write_u32(self.local_node.creation.get())?;
@@ -168,7 +171,7 @@ where
         let (node, challenge) = match reader.read_u8().await? {
             b'n' => {
                 let version = reader.read_u16().await?;
-                if version != 5 {
+                if version != NODE_NAME_VERSION {
                     return Err(HandshakeError::InvalidVersionValue { value: version });
                 }
                 let flags =
@@ -285,7 +288,7 @@ where
         let node = match tag {
             b'n' => {
                 let version = reader.read_u16().await?;
-                if version != 5 {
+                if version != NODE_NAME_VERSION {
                     return Err(HandshakeError::InvalidVersionValue { value: version });
                 }
                 let flags =
@@ -533,45 +536,109 @@ impl Challenge {
 struct Digest([u8; 16]);
 
 /// Possible errors during handshake.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 #[non_exhaustive]
 #[allow(missing_docs)]
 pub enum HandshakeError {
-    #[error("peer already has an ongoing handshake with this node")]
+    /// Peer already has an ongoing handshake with this node.
     OngoingHandshake,
 
-    #[error("the connection is disallowed for some (unspecified) security reason")]
+    /// Connection is disallowed for some (unspecified) security reason.
     NotAllowed,
 
-    #[error("a connection to the node is already active")]
+    /// Connection to the node is already active.
     AlreadyActive,
 
-    #[error("unknown distribution protocol version {value:?}")]
+    /// Unknown distribution protocol version.
     UnknownProtocolVersion { value: u16 },
 
-    #[error("received an unknown status {status:?}")]
+    /// Unknown status.
     UnknownStatus { status: String },
 
-    #[error("received an unexpected tag {tag} for {message:?}")]
+    /// Unexpected tag.
     UnexpectedTag { message: &'static str, tag: u8 },
 
-    #[error("cookie mismatch")]
+    /// Cookie mismatch.
     CookieMismatch,
 
-    #[error("the 'version' value of an old 'send_name' message must be 5, but got {value}")]
+    /// Invalid version.
     InvalidVersionValue { value: u16 },
 
-    #[error("{current:?} was unexpectedly executed before {depends_on:?}")]
+    /// Unexpected handshake phase.
     PhaseError {
         current: &'static str,
         depends_on: &'static str,
     },
 
-    #[error(transparent)]
-    NodeNameError(#[from] crate::node::NodeNameError),
+    /// Node name error.
+    NodeNameError(NodeNameError),
 
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    /// I/O error.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for HandshakeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OngoingHandshake => {
+                write!(f, "peer already has an ongoing handshake with this node")
+            }
+            Self::NotAllowed => write!(
+                f,
+                "the connection is disallowed for some (unspecified) security reason"
+            ),
+            Self::AlreadyActive => write!(f, "a connection to the node is already active"),
+            Self::UnknownProtocolVersion { value } => {
+                write!(f, "unknown distribution protocol version {value:?}")
+            }
+            Self::UnknownStatus { status } => {
+                write!(f, "received an unknown status {status:?}")
+            }
+            Self::UnexpectedTag { message, tag } => {
+                write!(f, "received an unexpected tag {tag} for {message:?}")
+            }
+            Self::CookieMismatch => write!(f, "cookie mismatch"),
+            Self::InvalidVersionValue { value } => {
+                write!(
+                    f,
+                    "the 'version' value of an old 'send_name' message must be {NODE_NAME_VERSION}, but got {value}"
+                )
+            }
+            Self::PhaseError {
+                current,
+                depends_on,
+            } => {
+                write!(
+                    f,
+                    "{current:?} was unexpectedly executed before {depends_on:?}"
+                )
+            }
+            Self::NodeNameError(error) => write!(f, "{error}"),
+            Self::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for HandshakeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NodeNameError(error) => Some(error),
+            Self::Io(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for HandshakeError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<NodeNameError> for HandshakeError {
+    fn from(value: NodeNameError) -> Self {
+        Self::NodeNameError(value)
+    }
 }
 
 #[cfg(test)]

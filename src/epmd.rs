@@ -91,33 +91,78 @@ impl NodeEntry {
 }
 
 /// Possible errors.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 #[non_exhaustive]
 #[allow(missing_docs)]
 pub enum EpmdError {
     /// Unknown response tag.
-    #[error("received an unknown tag {tag} as the response of {request}")]
     UnknownResponseTag { request: &'static str, tag: u8 },
 
     /// Too long request.
-    #[error("request byte size must be less than 0xFFFF, but got {size} bytes")]
     TooLongRequest { size: usize },
 
     /// `PORT_PLEASE2_REQ` request failure.
-    #[error("EPMD responded an error code {code} against a PORT_PLEASE2_REQ request")]
     GetNodeEntryError { code: u8 },
 
     /// `ALIVE2_REQ` request failure.
-    #[error("EPMD responded an error code {code} against an ALIVE2_REQ request")]
     RegisterNodeError { code: u8 },
 
     /// Malformed `NAMES_RESP` line.
-    #[error("found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}")]
     MalformedNamesResponse { line: String },
 
     /// I/O error.
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for EpmdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownResponseTag { request, tag } => {
+                write!(
+                    f,
+                    "received an unknown tag {tag} as the response of {request}"
+                )
+            }
+            Self::TooLongRequest { size } => {
+                write!(
+                    f,
+                    "request byte size must be less than 0xFFFF, but got {size} bytes"
+                )
+            }
+            Self::GetNodeEntryError { code } => {
+                write!(
+                    f,
+                    "EPMD responded an error code {code} against a PORT_PLEASE2_REQ request"
+                )
+            }
+            Self::RegisterNodeError { code } => {
+                write!(
+                    f,
+                    "EPMD responded an error code {code} against an ALIVE2_REQ request"
+                )
+            }
+            Self::MalformedNamesResponse { line } => {
+                write!(f,"found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}")
+            }
+            Self::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for EpmdError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        if let Self::Io(error) = self {
+            Some(error)
+        } else {
+            None
+        }
+    }
+}
+
+impl From<std::io::Error> for EpmdError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
 }
 
 /// EPMD client.
