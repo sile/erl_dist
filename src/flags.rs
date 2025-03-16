@@ -1,5 +1,6 @@
 bitflags::bitflags! {
     /// Distribution flags.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct DistributionFlags: u64 {
         /// The node is to be published and part of the global namespace.
         const PUBLISHED = 0x01;
