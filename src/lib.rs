@@ -11,7 +11,7 @@
 //! # use smol::net::TcpStream;
 //! use erl_dist::epmd::{DEFAULT_EPMD_PORT, EpmdClient};
 //!
-//! # fn main() -> anyhow::Result<()> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # smol::block_on(async {
 //! // Connect to the local EPMD.
 //! let connection = TcpStream::connect(("localhost", DEFAULT_EPMD_PORT)).await?;
@@ -38,7 +38,7 @@
 //! use erl_dist::term::{Atom, Pid};
 //! use erl_dist::message::{channel, Message};
 //!
-//! # fn main() -> anyhow::Result<()> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # smol::block_on(async {
 //! // Connect to a peer node.
 //! let peer_host = "localhost";
