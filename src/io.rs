@@ -130,7 +130,7 @@ pub struct HandshakeMessageWriter<'a, T> {
     buf: Vec<u8>,
 }
 
-impl<'a, T> HandshakeMessageWriter<'a, T>
+impl<T> HandshakeMessageWriter<'_, T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
@@ -179,7 +179,7 @@ pub struct HandshakeMessageReader<'a, T> {
     size: usize,
 }
 
-impl<'a, T> HandshakeMessageReader<'a, T>
+impl<T> HandshakeMessageReader<'_, T>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
