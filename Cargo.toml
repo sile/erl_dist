@@ -16,7 +16,7 @@ coveralls = {repository = "sile/erl_dist"}
 [dependencies]
 bitflags = "2"
 byteorder = "1"
-eetf = "0.8"
+eetf = "0.9"
 futures = "0.3"
 md5 = "0.7"
 rand = "0.9"
