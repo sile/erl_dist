@@ -13,7 +13,7 @@ edition = "2021"
 [dependencies]
 bitflags = "2"
 byteorder = "1"
-eetf = "0.9"
+eetf = "0.10"
 futures = "0.3"
 md5 = "0.7"
 rand = "0.9"
