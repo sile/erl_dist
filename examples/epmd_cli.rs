@@ -57,10 +57,12 @@ fn main() -> orfail::Result<()> {
             Command::Names => {
                 // 'NAMES_REQ'
                 let names = client.get_names().await.or_fail()?;
-                let result = serde_json::json!(names
-                    .into_iter()
-                    .map(|(name, port)| serde_json::json!({"name": name, "port": port}))
-                    .collect::<Vec<_>>());
+                let result = serde_json::json!(
+                    names
+                        .into_iter()
+                        .map(|(name, port)| serde_json::json!({"name": name, "port": port}))
+                        .collect::<Vec<_>>()
+                );
                 println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
             }
             Command::NodeEntry { node } => {
