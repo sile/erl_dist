@@ -20,7 +20,7 @@ where
         self.inner
     }
 
-    pub fn handshake_message_writer(&mut self) -> HandshakeMessageWriter<T> {
+    pub fn handshake_message_writer(&mut self) -> HandshakeMessageWriter<'_, T> {
         HandshakeMessageWriter {
             connection: self,
             buf: Vec::new(),
