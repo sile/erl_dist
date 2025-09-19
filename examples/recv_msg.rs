@@ -13,62 +13,60 @@
 //! $ erl -sname foo
 //! > {bar, bar@localhost} ! hello.
 //! ```
-use clap::Parser;
 use futures::stream::StreamExt;
 use orfail::OrFail;
 
-#[derive(Debug, Parser)]
-#[clap(name = "recv_msg")]
-struct Args {
-    #[clap(long = "local", default_value = "bar@localhost")]
-    local_node: erl_dist::node::NodeName,
+fn main() -> noargs::Result<()> {
+    let mut args = noargs::raw_args();
+    args.metadata_mut().app_name = "recv_msg";
+    args.metadata_mut().app_description = "Receive messages from Erlang nodes";
+    noargs::HELP_FLAG.take_help(&mut args);
 
-    #[clap(long, default_value = "WPKYDIOSJIMJUURLRUHV")]
-    cookie: String,
+    let local_node: erl_dist::node::NodeName = noargs::opt("local")
+        .default("bar@localhost")
+        .doc("Local node name")
+        .take(&mut args)
+        .then(|a| a.value().parse())?;
+    let cookie: String = noargs::opt("cookie")
+        .default("WPKYDIOSJIMJUURLRUHV")
+        .doc("Erlang cookie")
+        .take(&mut args)
+        .then(|a| a.value().parse())?;
+    let published: bool = noargs::flag("published")
+        .doc("Add PUBLISHED distribution flag to the node (otherwise, the node runs as a hidden node)")
+        .take(&mut args)
+        .is_present();
 
-    /// Add `PUBLISHED` distribution flag to the node (otherwise, the node runs as a hidden node).
-    #[clap(long)]
-    published: bool,
-}
-
-impl Args {
-    async fn local_epmd_client(
-        &self,
-    ) -> orfail::Result<erl_dist::epmd::EpmdClient<smol::net::TcpStream>> {
-        let addr = (self.local_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
-        let stream = smol::net::TcpStream::connect(addr).await.or_fail()?;
-        Ok(erl_dist::epmd::EpmdClient::new(stream))
+    if let Some(help) = args.finish()? {
+        print!("{help}");
+        return Ok(());
     }
-}
 
-fn main() -> orfail::Result<()> {
-    let args = Args::parse();
     smol::block_on(async {
         let listener = smol::net::TcpListener::bind("0.0.0.0:0").await.or_fail()?;
         let listening_port = listener.local_addr().or_fail()?.port();
         println!("Listening port: {}", listening_port);
 
-        let local_node_entry = if args.published {
-            erl_dist::epmd::NodeEntry::new(args.local_node.name(), listening_port)
+        let local_node_entry = if published {
+            erl_dist::epmd::NodeEntry::new(local_node.name(), listening_port)
         } else {
-            erl_dist::epmd::NodeEntry::new_hidden(args.local_node.name(), listening_port)
+            erl_dist::epmd::NodeEntry::new_hidden(local_node.name(), listening_port)
         };
 
-        let (keepalive_connection, creation) = args
-            .local_epmd_client()
-            .await?
-            .register(local_node_entry)
-            .await
-            .or_fail()?;
+        let epmd_addr = (local_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
+        let stream = smol::net::TcpStream::connect(epmd_addr).await.or_fail()?;
+        let epmd_client = erl_dist::epmd::EpmdClient::new(stream);
+        let (keepalive_connection, creation) =
+            epmd_client.register(local_node_entry).await.or_fail()?;
         println!("Registered self node: creation={:?}", creation);
 
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await.transpose().or_fail()? {
-            let mut local_node = erl_dist::node::LocalNode::new(args.local_node.clone(), creation);
-            if args.published {
+            let mut local_node = erl_dist::node::LocalNode::new(local_node.clone(), creation);
+            if published {
                 local_node.flags |= erl_dist::DistributionFlags::PUBLISHED;
             }
-            let cookie = args.cookie.clone();
+            let cookie = cookie.clone();
             smol::spawn(async move {
                 match handle_client(local_node, cookie, stream).await {
                     Ok(()) => {
@@ -83,8 +81,10 @@ fn main() -> orfail::Result<()> {
         }
 
         std::mem::drop(keepalive_connection);
-        Ok(())
-    })
+        Ok::<(), orfail::Failure>(())
+    })?;
+
+    Ok(())
 }
 
 async fn handle_client(
