@@ -6,7 +6,7 @@
 //!
 //! ```bash
 //! $ cargo run --example send_msg -- --help
-//! $ cargo run --example send_msg -- --peer foo --destination foo --cookie erlang_cookie -m hello
+//! $ cargo run --example send_msg -- --peer foo@localhost --destination foo --cookie erlang_cookie -m hello
 //! ```
 use orfail::OrFail;
 

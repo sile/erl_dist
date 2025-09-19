@@ -5,7 +5,7 @@
 //! ```bash
 //! $ cargo run --example epmd_cli -- --help
 //! $ cargo run --example epmd_cli names
-//! $ cargo run --example epmd_cli node_info foo
+//! $ cargo run --example epmd_cli node_entry foo
 //! ```
 use erl_dist::epmd::{EpmdClient, NodeEntry};
 use orfail::OrFail;
