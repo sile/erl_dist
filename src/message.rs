@@ -3,15 +3,15 @@
 //! Reference: [Protocol between Connected Nodes](https://www.erlang.org/doc/apps/erts/erl_dist_protocol.html#protocol-between-connected-nodes)
 //!
 //! Note that distribution headers are not supported in the current version.
+#[cfg(doc)]
+use crate::DistributionFlags;
 use crate::eetf_ext;
 use crate::io::{ReadTermExt, WriteTermExt};
 use crate::term::{Atom, FixInteger, List, Mfa, Pid, PidOrAtom, Reference, Term, Tuple};
-#[cfg(doc)]
-use crate::DistributionFlags;
 use eetf::{DecodeError, EncodeError};
 use std::io::{Read, Write};
 
-pub use crate::channel::{channel, Receiver, RecvError, SendError, Sender};
+pub use crate::channel::{Receiver, RecvError, SendError, Sender, channel};
 
 trait DistributionMessage: Sized {
     const OP: i32;

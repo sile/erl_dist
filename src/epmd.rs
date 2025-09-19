@@ -142,7 +142,10 @@ impl std::fmt::Display for EpmdError {
                 )
             }
             Self::MalformedNamesResponse { line } => {
-                write!(f,"found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}")
+                write!(
+                    f,
+                    "found a malformed NAMES_RESP line: expected_format=\"name {{NAME}} at port {{PORT}}\", actual_line={line:?}"
+                )
             }
             Self::Io(error) => write!(f, "{error}"),
         }

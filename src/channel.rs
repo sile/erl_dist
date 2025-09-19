@@ -1,8 +1,8 @@
+use crate::DistributionFlags;
 #[cfg(doc)]
 use crate::handshake;
 use crate::io::Connection;
 use crate::message::Message;
-use crate::DistributionFlags;
 use futures::io::{AsyncRead, AsyncWrite};
 
 /// Makes a channel to send/received messages to/from a connected node.

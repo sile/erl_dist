@@ -72,7 +72,7 @@ where
                 return Err(HandshakeError::PhaseError {
                     current: "ClientSideHandshake::execute_rest()",
                     depends_on: "ClientSideHandshake::execute_send_name()",
-                })
+                });
             }
             Some(HandshakeStatus::Nok) => return Err(HandshakeError::OngoingHandshake),
             Some(HandshakeStatus::NotAllowed) => return Err(HandshakeError::NotAllowed),
@@ -201,7 +201,7 @@ where
                 return Err(HandshakeError::UnexpectedTag {
                     message: "CHALLENGE",
                     tag,
-                })
+                });
             }
         };
         reader.finish().await?;
@@ -319,7 +319,7 @@ where
                 return Err(HandshakeError::UnexpectedTag {
                     message: "NAME",
                     tag,
-                })
+                });
             }
         };
         reader.finish().await?;
@@ -327,11 +327,7 @@ where
         let name = node.name.clone();
         let is_dynamic = node.flags.contains(DistributionFlags::NAME_ME);
         self.peer_node = Some(node);
-        if is_dynamic {
-            Ok(None)
-        } else {
-            Ok(Some(name))
-        }
+        if is_dynamic { Ok(None) } else { Ok(Some(name)) }
     }
 
     /// Executes the rest part of the handshake protocol.
