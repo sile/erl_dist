@@ -13,9 +13,9 @@ edition = "2024"
 [dependencies]
 bitflags = "2"
 byteorder = "1"
-eetf = "0.10"
+eetf = "0.11"
 futures = "0.3"
-md5 = "0.7"
+md5 = "0.8"
 rand = "0.9"
 
 [dev-dependencies]
