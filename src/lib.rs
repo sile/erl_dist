@@ -132,8 +132,8 @@ mod tests {
         }
     }
 
-    pub async fn try_epmd_client(
-    ) -> Result<crate::epmd::EpmdClient<smol::net::TcpStream>, BoxError> {
+    pub async fn try_epmd_client() -> Result<crate::epmd::EpmdClient<smol::net::TcpStream>, BoxError>
+    {
         let client = smol::net::TcpStream::connect(("127.0.0.1", crate::epmd::DEFAULT_EPMD_PORT))
             .await
             .map(crate::epmd::EpmdClient::new)?;

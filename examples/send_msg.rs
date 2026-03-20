@@ -61,8 +61,7 @@ fn main() -> noargs::Result<()> {
         println!("Got peer node info: {:?}", peer_node_info);
 
         let creation = erl_dist::node::Creation::random();
-        let stream = smol::net::TcpStream::connect((peer_node.host(), peer_node_info.port))
-            .await?;
+        let stream = smol::net::TcpStream::connect((peer_node.host(), peer_node_info.port)).await?;
         let local_node = erl_dist::node::LocalNode::new(local_node, creation);
         let mut handshake =
             erl_dist::handshake::ClientSideHandshake::new(stream, local_node.clone(), &cookie);

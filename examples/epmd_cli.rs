@@ -40,8 +40,8 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
             let names = client.get_names().await?;
@@ -65,8 +65,8 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
             let result = client.dump().await?;
@@ -89,8 +89,8 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
             let node_info = client.get_node(&node).await?.ok_or("node not found")?;
@@ -117,8 +117,8 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
             let result = client.kill().await?;
@@ -151,8 +151,8 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
             let node = if hidden {

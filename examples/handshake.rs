@@ -58,8 +58,7 @@ fn main() -> noargs::Result<()> {
         };
         println!("Registered self node: creation={:?}", creation);
 
-        let stream = smol::net::TcpStream::connect((peer_node.host(), peer_node_info.port))
-            .await?;
+        let stream = smol::net::TcpStream::connect((peer_node.host(), peer_node_info.port)).await?;
         let mut handshake = erl_dist::handshake::ClientSideHandshake::new(
             stream,
             erl_dist::node::LocalNode::new(local_node.clone(), creation),

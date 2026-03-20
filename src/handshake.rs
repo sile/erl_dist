@@ -164,9 +164,8 @@ where
                             "unexpected eof",
                         )));
                     }
-                    let creation = Creation::new(u32::from_be_bytes([
-                        bytes[0], bytes[1], bytes[2], bytes[3],
-                    ]));
+                    let creation =
+                        Creation::new(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
                     HandshakeStatus::Named { name, creation }
                 } else {
                     let status = String::from_utf8_lossy(&status).to_string();

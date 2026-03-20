@@ -55,8 +55,7 @@ fn main() -> noargs::Result<()> {
         let epmd_addr = (local_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
         let stream = smol::net::TcpStream::connect(epmd_addr).await?;
         let epmd_client = erl_dist::epmd::EpmdClient::new(stream);
-        let (keepalive_connection, creation) =
-            epmd_client.register(local_node_entry).await?;
+        let (keepalive_connection, creation) = epmd_client.register(local_node_entry).await?;
         println!("Registered self node: creation={:?}", creation);
 
         let mut incoming = listener.incoming();
