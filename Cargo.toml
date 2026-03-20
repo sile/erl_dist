@@ -18,5 +18,5 @@ rand = "0.9"
 
 [dev-dependencies]
 noargs = "0.4.1"
-nojson = "0.1"
+nojson = "0.3"
 smol = "2"
