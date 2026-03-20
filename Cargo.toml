@@ -14,7 +14,7 @@ edition = "2024"
 eetf = "0.11"
 futures = "0.3"
 md5 = "0.8"
-rand = "0.9"
+rand = "0.10"
 
 [dev-dependencies]
 noargs = "0.4.1"

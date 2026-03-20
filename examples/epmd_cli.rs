@@ -111,13 +111,21 @@ fn main() -> noargs::Result<()> {
                     f.member("port", node_info.port)?;
                     f.member(
                         "node_type",
-                        format!("{:?} ({})", node_info.node_type, u8::from(node_info.node_type))
-                            .as_str(),
+                        format!(
+                            "{:?} ({})",
+                            node_info.node_type,
+                            u8::from(node_info.node_type)
+                        )
+                        .as_str(),
                     )?;
                     f.member(
                         "protocol",
-                        format!("{:?} ({})", node_info.protocol, u8::from(node_info.protocol))
-                            .as_str(),
+                        format!(
+                            "{:?} ({})",
+                            node_info.protocol,
+                            u8::from(node_info.protocol)
+                        )
+                        .as_str(),
                     )?;
                     f.member("highest_version", node_info.highest_version)?;
                     f.member("lowest_version", node_info.lowest_version)?;
