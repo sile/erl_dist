@@ -45,13 +45,22 @@ fn main() -> noargs::Result<()> {
             let client = EpmdClient::new(stream);
 
             let names = client.get_names().await?;
-            let result = serde_json::json!(
-                names
-                    .into_iter()
-                    .map(|(name, port)| serde_json::json!({"name": name, "port": port}))
-                    .collect::<Vec<_>>()
-            );
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            let result = nojson::json(|f| {
+                f.set_indent_size(2);
+                f.set_spacing(true);
+                f.array(|f| {
+                    for (name, port) in &names {
+                        f.element(nojson::json(|f| {
+                            f.object(|f| {
+                                f.member("name", name.as_str())?;
+                                f.member("port", *port)
+                            })
+                        }))?;
+                    }
+                    Ok(())
+                })
+            });
+            println!("{result}");
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("dump")
@@ -94,16 +103,28 @@ fn main() -> noargs::Result<()> {
             let client = EpmdClient::new(stream);
 
             let node_info = client.get_node(&node).await?.ok_or("node not found")?;
-            let result = serde_json::json!({
-                "name": node_info.name,
-                "port": node_info.port,
-                "node_type": format!("{:?} ({})", node_info.node_type, u8::from(node_info.node_type)),
-                "protocol": format!("{:?} ({})", node_info.protocol, u8::from(node_info.protocol)),
-                "highest_version": node_info.highest_version,
-                "lowest_version": node_info.lowest_version,
-                "extra": node_info.extra
+            let result = nojson::json(|f| {
+                f.set_indent_size(2);
+                f.set_spacing(true);
+                f.object(|f| {
+                    f.member("name", node_info.name.as_str())?;
+                    f.member("port", node_info.port)?;
+                    f.member(
+                        "node_type",
+                        format!("{:?} ({})", node_info.node_type, u8::from(node_info.node_type))
+                            .as_str(),
+                    )?;
+                    f.member(
+                        "protocol",
+                        format!("{:?} ({})", node_info.protocol, u8::from(node_info.protocol))
+                            .as_str(),
+                    )?;
+                    f.member("highest_version", node_info.highest_version)?;
+                    f.member("lowest_version", node_info.lowest_version)?;
+                    f.member("extra", node_info.extra.as_slice())
+                })
             });
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            println!("{result}");
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("kill")
@@ -122,8 +143,12 @@ fn main() -> noargs::Result<()> {
             let client = EpmdClient::new(stream);
 
             let result = client.kill().await?;
-            let result = serde_json::json!({ "result": result });
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            let result = nojson::json(|f| {
+                f.set_indent_size(2);
+                f.set_spacing(true);
+                f.object(|f| f.member("result", result.as_str()))
+            });
+            println!("{result}");
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("register")
@@ -161,10 +186,12 @@ fn main() -> noargs::Result<()> {
                 NodeEntry::new(&name, port)
             };
             let (_, creation) = client.register(node).await?;
-            let result = serde_json::json!({
-                "creation": creation.get()
+            let result = nojson::json(|f| {
+                f.set_indent_size(2);
+                f.set_spacing(true);
+                f.object(|f| f.member("creation", creation.get()))
             });
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            println!("{result}");
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if let Some(help) = args.finish()? {
