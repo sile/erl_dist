@@ -8,7 +8,6 @@
 //! $ cargo run --example epmd_cli node_entry foo
 //! ```
 use erl_dist::epmd::{EpmdClient, NodeEntry};
-use orfail::OrFail;
 
 fn main() -> noargs::Result<()> {
     let mut args = noargs::raw_args();
@@ -41,20 +40,19 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await
-                .or_fail()?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
-            let names = client.get_names().await.or_fail()?;
+            let names = client.get_names().await?;
             let result = serde_json::json!(
                 names
                     .into_iter()
                     .map(|(name, port)| serde_json::json!({"name": name, "port": port}))
                     .collect::<Vec<_>>()
             );
-            println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
-            Ok::<(), orfail::Failure>(())
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("dump")
         .doc("Dump all registered nodes")
@@ -67,14 +65,13 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await
-                .or_fail()?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
-            let result = client.dump().await.or_fail()?;
+            let result = client.dump().await?;
             println!("{}", result);
-            Ok::<(), orfail::Failure>(())
+            Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("node_entry")
         .doc("Get node entry information")
@@ -92,12 +89,11 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await
-                .or_fail()?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
-            let node_info = client.get_node(&node).await.or_fail()?.or_fail()?;
+            let node_info = client.get_node(&node).await?.ok_or("node not found")?;
             let result = serde_json::json!({
                 "name": node_info.name,
                 "port": node_info.port,
@@ -107,8 +103,8 @@ fn main() -> noargs::Result<()> {
                 "lowest_version": node_info.lowest_version,
                 "extra": node_info.extra
             });
-            println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
-            Ok::<(), orfail::Failure>(())
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("kill")
         .doc("Kill EPMD daemon")
@@ -121,15 +117,14 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await
-                .or_fail()?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
-            let result = client.kill().await.or_fail()?;
+            let result = client.kill().await?;
             let result = serde_json::json!({ "result": result });
-            println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
-            Ok::<(), orfail::Failure>(())
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if noargs::cmd("register")
         .doc("Register a node with EPMD")
@@ -156,9 +151,8 @@ fn main() -> noargs::Result<()> {
         }
 
         smol::block_on(async {
-            let stream = smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port))
-                .await
-                .or_fail()?;
+            let stream =
+                smol::net::TcpStream::connect(format!("{}:{}", epmd_host, epmd_port)).await?;
             let client = EpmdClient::new(stream);
 
             let node = if hidden {
@@ -166,12 +160,12 @@ fn main() -> noargs::Result<()> {
             } else {
                 NodeEntry::new(&name, port)
             };
-            let (_, creation) = client.register(node).await.or_fail()?;
+            let (_, creation) = client.register(node).await?;
             let result = serde_json::json!({
                 "creation": creation.get()
             });
-            println!("{}", serde_json::to_string_pretty(&result).or_fail()?);
-            Ok::<(), orfail::Failure>(())
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     } else if let Some(help) = args.finish()? {
         print!("{help}");

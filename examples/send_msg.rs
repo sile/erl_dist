@@ -8,7 +8,6 @@
 //! $ cargo run --example send_msg -- --help
 //! $ cargo run --example send_msg -- --peer foo@localhost --destination foo --cookie erlang_cookie -m hello
 //! ```
-use orfail::OrFail;
 
 fn main() -> noargs::Result<()> {
     let mut args = noargs::raw_args();
@@ -52,28 +51,24 @@ fn main() -> noargs::Result<()> {
     smol::block_on(async {
         let peer_node_info = {
             let addr = (peer_node.host(), erl_dist::epmd::DEFAULT_EPMD_PORT);
-            let stream = smol::net::TcpStream::connect(addr).await.or_fail()?;
+            let stream = smol::net::TcpStream::connect(addr).await?;
             let epmd_client = erl_dist::epmd::EpmdClient::new(stream);
             epmd_client
                 .get_node(&peer_node.name())
-                .await
-                .or_fail()?
-                .or_fail()?
+                .await?
+                .ok_or("peer node not found")?
         };
         println!("Got peer node info: {:?}", peer_node_info);
 
         let creation = erl_dist::node::Creation::random();
-        let stream = smol::net::TcpStream::connect((peer_node.host(), peer_node_info.port))
-            .await
-            .or_fail()?;
+        let stream = smol::net::TcpStream::connect((peer_node.host(), peer_node_info.port)).await?;
         let local_node = erl_dist::node::LocalNode::new(local_node, creation);
         let mut handshake =
             erl_dist::handshake::ClientSideHandshake::new(stream, local_node.clone(), &cookie);
         let _status = handshake
             .execute_send_name(erl_dist::LOWEST_DISTRIBUTION_PROTOCOL_VERSION)
-            .await
-            .or_fail()?;
-        let (connection, peer_node) = handshake.execute_rest(true).await.or_fail()?;
+            .await?;
+        let (connection, peer_node) = handshake.execute_rest(true).await?;
         println!("Handshake finished: peer={:?}", peer_node);
 
         let (mut tx, _) =
@@ -84,8 +79,10 @@ fn main() -> noargs::Result<()> {
             eetf::Atom::from(destination),
             eetf::Atom::from(message).into(),
         );
-        tx.send(msg).await.or_fail()?;
+        tx.send(msg).await?;
 
-        Ok(())
-    })
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })?;
+
+    Ok(())
 }
