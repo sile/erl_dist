@@ -146,6 +146,12 @@ where
                     }
                     let n = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
                     let bytes = &bytes[2..];
+                    if bytes.len() < n + 4 {
+                        return Err(HandshakeError::Io(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "unexpected eof",
+                        )));
+                    }
                     let name = std::str::from_utf8(&bytes[..n])
                         .map_err(|_| {
                             std::io::Error::new(
@@ -158,12 +164,6 @@ where
                     let node_name: NodeName = name.parse()?;
                     let name = node_name.name().to_owned();
 
-                    if bytes.len() < 4 {
-                        return Err(HandshakeError::Io(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "unexpected eof",
-                        )));
-                    }
                     let creation =
                         Creation::new(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
                     HandshakeStatus::Named { name, creation }

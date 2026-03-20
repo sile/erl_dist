@@ -136,7 +136,7 @@ impl DistributionFlags {
         self.0
     }
 
-    /// Creates flags from raw bits, ignoring unknown bits.
+    /// Creates flags from raw bits.
     pub const fn from_bits_truncate(bits: u64) -> Self {
         Self(bits)
     }
