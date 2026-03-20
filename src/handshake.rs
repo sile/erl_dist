@@ -8,7 +8,6 @@
 use crate::io::Connection;
 use crate::node::{Creation, LocalNode, NodeName, NodeNameError, PeerNode};
 use crate::{DistributionFlags, LOWEST_DISTRIBUTION_PROTOCOL_VERSION};
-use byteorder::{BigEndian, ReadBytesExt};
 use futures::io::{AsyncRead, AsyncWrite};
 
 const PROTOCOL_VERSION: u16 = LOWEST_DISTRIBUTION_PROTOCOL_VERSION;
@@ -138,16 +137,36 @@ where
             b"alive" => HandshakeStatus::Alive,
             _ => {
                 if status.starts_with(b"named:") {
-                    use std::io::Read as _;
-
-                    let mut bytes = &status["named:".len()..];
-                    let n = u64::from(bytes.read_u16::<BigEndian>()?);
-                    let mut name = String::new();
-                    bytes.take(n).read_to_string(&mut name)?;
+                    let bytes = &status["named:".len()..];
+                    if bytes.len() < 2 {
+                        return Err(HandshakeError::Io(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "unexpected eof",
+                        )));
+                    }
+                    let n = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
+                    let bytes = &bytes[2..];
+                    let name = std::str::from_utf8(&bytes[..n])
+                        .map_err(|_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "invalid UTF-8 in node name",
+                            )
+                        })?
+                        .to_owned();
+                    let bytes = &bytes[n..];
                     let node_name: NodeName = name.parse()?;
                     let name = node_name.name().to_owned();
 
-                    let creation = Creation::new(bytes.read_u32::<BigEndian>()?);
+                    if bytes.len() < 4 {
+                        return Err(HandshakeError::Io(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "unexpected eof",
+                        )));
+                    }
+                    let creation = Creation::new(u32::from_be_bytes([
+                        bytes[0], bytes[1], bytes[2], bytes[3],
+                    ]));
                     HandshakeStatus::Named { name, creation }
                 } else {
                     let status = String::from_utf8_lossy(&status).to_string();

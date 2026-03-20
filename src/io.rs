@@ -1,4 +1,3 @@
-use byteorder::{BigEndian, ByteOrder as _, WriteBytesExt};
 use eetf::{DecodeError, EncodeError, FixInteger, Term, Tuple};
 use futures::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use std::io::{Read, Write};
@@ -43,15 +42,11 @@ where
     }
 
     pub async fn write_u16(&mut self, v: u16) -> std::io::Result<()> {
-        let mut buf = [0; 2];
-        BigEndian::write_u16(&mut buf, v);
-        self.inner.write_all(&buf).await
+        self.inner.write_all(&v.to_be_bytes()).await
     }
 
     pub async fn write_u32(&mut self, v: u32) -> std::io::Result<()> {
-        let mut buf = [0; 4];
-        BigEndian::write_u32(&mut buf, v);
-        self.inner.write_all(&buf).await
+        self.inner.write_all(&v.to_be_bytes()).await
     }
 
     pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
@@ -71,19 +66,19 @@ where
     pub async fn read_u16(&mut self) -> std::io::Result<u16> {
         let mut buf = [0; 2];
         self.inner.read_exact(&mut buf).await?;
-        Ok(BigEndian::read_u16(&buf))
+        Ok(u16::from_be_bytes(buf))
     }
 
     pub async fn read_u32(&mut self) -> std::io::Result<u32> {
         let mut buf = [0; 4];
         self.inner.read_exact(&mut buf).await?;
-        Ok(BigEndian::read_u32(&buf))
+        Ok(u32::from_be_bytes(buf))
     }
 
     pub async fn read_u64(&mut self) -> std::io::Result<u64> {
         let mut buf = [0; 8];
         self.inner.read_exact(&mut buf).await?;
-        Ok(BigEndian::read_u64(&buf))
+        Ok(u64::from_be_bytes(buf))
     }
 
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
@@ -152,19 +147,23 @@ where
     }
 
     pub fn write_u8(&mut self, v: u8) -> std::io::Result<()> {
-        self.buf.write_u8(v)
+        self.buf.push(v);
+        Ok(())
     }
 
     pub fn write_u16(&mut self, v: u16) -> std::io::Result<()> {
-        self.buf.write_u16::<BigEndian>(v)
+        self.buf.extend_from_slice(&v.to_be_bytes());
+        Ok(())
     }
 
     pub fn write_u32(&mut self, v: u32) -> std::io::Result<()> {
-        self.buf.write_u32::<BigEndian>(v)
+        self.buf.extend_from_slice(&v.to_be_bytes());
+        Ok(())
     }
 
     pub fn write_u64(&mut self, v: u64) -> std::io::Result<()> {
-        self.buf.write_u64::<BigEndian>(v)
+        self.buf.extend_from_slice(&v.to_be_bytes());
+        Ok(())
     }
 
     pub fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
