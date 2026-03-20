@@ -11,7 +11,7 @@ jobs:
         toolchain: [stable, beta, nightly]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - run: rustup update ${{ matrix.toolchain }}
       - run: cargo check --all
 
@@ -24,7 +24,7 @@ jobs:
         toolchain: [stable]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{matrix.otp}}
@@ -39,7 +39,7 @@ jobs:
         toolchain: [stable, beta, nightly]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - run: rustup update ${{ matrix.toolchain }}
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all -- -D warnings
